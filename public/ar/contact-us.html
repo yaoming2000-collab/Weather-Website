@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>اتصل بنا - مجلة إتس فن</title>
+ 
+    <style>
+        body {
+            color: #04162E;
+            background-color: #fff;
+            font-size: 1.05rem;
+            line-height: 1.2;
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .container {
+            max-width: 64rem;
+            margin: 0 auto;
+            padding: 0.6rem;
+        }
+
+        main {
+            padding: 0.8rem 0;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 1rem;
+            color: #121212;
+            ;
+        }
+
+        h2 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            color: #12121299;
+            ;
+        }
+
+        p {
+            margin-bottom: 1rem;
+        }
+
+        form {
+            background-color: #f4f3f04d;
+            ;
+            padding: 1rem 0 1rem 1rem;
+            border-radius: 0.4rem;
+            margin-bottom: 1rem;
+        }
+
+        form div {
+            margin-bottom: 1.1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.2rem;
+            font-weight: bold;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #eee;
+            ;
+            border-radius: 0.2rem;
+            background-color: #fff;
+            ;
+            color: #04162E;
+        }
+
+        textarea {
+            min-height: 11rem;
+            resize: vertical;
+        }
+
+        button {
+            background-color: #159921;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.2rem;
+            cursor: pointer;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #0d7718;
+        }
+
+
+
+        a {
+            color: #159921;
+        }
+
+        .contact__form input,
+        .contact__form select {
+            border: .1rem solid #c0c4cc;
+            border-radius: .4rem;
+            box-sizing: border-box;
+            height: 2.2rem;
+            margin-bottom: 1rem;
+            padding: .1rem 1.1rem;
+            width: 100%
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+
+        .footer {
+            background-color: #f4f4f4;
+            flex-direction: column;
+            min-height: 9rem;
+            padding: 1.2rem 2rem
+        }
+
+        .footer,.footer__wrap {
+            display: flex;
+            justify-content: center
+        }
+
+        .footer__wrap {
+            align-items: center;
+            margin-bottom: 1rem
+        }
+
+        .footer__link {
+            color: #545454;
+            font-size: 1.05rem;
+            font-weight: 400;
+            margin: 0.8rem;
+            text-align: center
+        }
+
+        .footer__link:hover {
+            color: #eb4500;
+            cursor: pointer
+        }
+
+        .footer__link.active {
+            color: #eb4500
+        }
+
+        .footer__copyright {
+            color: #545454;;
+            font-size: 1.05rem;
+            font-weight: 400;
+            line-height: 1.2rem;
+            margin-bottom: 2rem;
+            text-align: center
+        }
+        
+        .back-button {
+            display: inline-flex;
+            align-items: center;
+            background-color: #f4f4f4;
+            color: #04162E;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.2rem;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            text-decoration: none;
+        }
+        
+        .back-button:hover {
+            background-color: #e0e0e0;
+            text-decoration: none;
+        }
+        
+        .back-button:before {
+            content: "→";
+            margin-left: 0.5rem;
+        }
+    </style>
+</head>
+
+<body class="light-scheme">
+    <div>
+        <main class="container">
+            <a href="javascript:history.back()" class="back-button">رجوع</a>
+            <h1>اتصل بنا</h1>
+            <p>أعزائي القراء، نرحب باقتراحاتكم وأسئلتكم أو شكاويكم عبر:</p>
+
+            <p><a href="mailto:team@itsfunmag.com">team@itsfunmag.com</a></p>
+
+            <p>أو يمكنكم التواصل معنا من خلال النموذج التالي:</p>
+
+            <form>
+                <div>
+                    <label for="name">الاسم</label>
+                    <input type="text" id="name" name="name">
+                </div>
+                <div>
+                    <label for="email">البريد الإلكتروني</label>
+                    <input type="email" id="email" name="email">
+                </div>
+                <div class="contact__form">
+                    <label for="purpose">الغرض من الرسالة</label>
+                    <select id="reason" name="reason">
+                        <option value="General feedback">ملاحظات عامة</option>
+                        <option value="General feedback">إعلانات</option>
+                        <option value="General feedback">مشاكل في الموقع</option>
+                        <option value="General feedback">انتهاك حقوق النشر</option>
+                        <option value="General feedback">طلب إزالة محتوى</option>
+                        <option value="General feedback">إشعار DMCA/مطالبات</option>
+                        <option value="General feedback">تقديم مقالة</option>
+                        <option value="General feedback">شراكة/تطوير الأعمال</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="subject">موضوع الرسالة</label>
+                    <input type="text" id="subject" name="subject">
+                </div>
+                <div>
+                    <label for="message">محتوى الرسالة</label>
+                    <textarea id="message" name="message"></textarea>
+                </div>
+                <button type="submit">إرسال</button>
+            </form>
+        </main>
+
+        <footer class=" footer">
+            <div class="footer__wrap"><a href="contact-us.html"
+                    class="footer__link prevent-link">اتصل بنا</a><a
+                    href="./privacy-policy.html"
+                    class="footer__link prevent-link">سياسة الخصوصية</a><a
+                    href="./term-of-use.html"
+                    class="footer__link prevent-link">شروط الاستخدام</a></div>
+            <p class="footer__copyright">حقوق الطبع والنشر © 2025 Its Fun Magazine. باستخدام هذا الموقع، توافق على شروط الاستخدام.</p>
+        </footer>
+    </div>
+
+    <script>
+        // Check if user prefers dark mode
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.body.classList.remove('light-scheme');
+            document.body.classList.add('dark-scheme');
+        }
+
+        // Toggle theme function if needed
+        function toggleTheme() {
+            document.body.classList.toggle('light-scheme');
+            document.body.classList.toggle('dark-scheme');
+        }
+    </script>
+</body>
+
+</html>

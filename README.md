@@ -1,3 +1,88 @@
-# weather.itsfunmag.com
+# weather.itsfunmag.com（重建版）
 
-天气站重建项目。开发进度和说明见各开发分支及合并请求。
+天气站重建项目。运行在 Cloudflare Workers 上，天气数据来自 Foreca。
+需求文档：<https://claude.ai/artifact/MBdsveGySxK9XyHFmtnEbK>
+
+## 进度
+
+| 步骤 | 内容 | 状态 |
+| --- | --- | --- |
+| 1 | 骨架：渠道和语言路由、旧网址兼容、天气数据模块、两层缓存、页面缓存、时区逻辑、自动化测试 | ✅ 本分支 |
+| 2 | 首页和子页的正式界面、单位换算、已保存城市 | 待开始 |
+| 3 | 往年对比、降雨时间轴、生活指数、"预报准吗"投票 | 待开始 |
+| 4 | 27 种语言文案、城市名对照表、阿拉伯语和希伯来语排版 | 待开始 |
+| 5 | 广告瀑布流迁移、广告位、性能优化 | 待开始 |
+| 6 | 部署说明、验收 | 待开始 |
+
+## 本地运行
+
+需要 Node.js 22。
+
+```bash
+npm install
+cp .dev.vars.example .dev.vars   # 默认使用模拟数据，不需要 Foreca 密钥
+npm run dev                      # 打开 http://127.0.0.1:8787/
+npm test                         # 自动化测试
+npm run typecheck                # 类型检查
+```
+
+用真实数据：在 `.dev.vars` 里设置 `WEATHER_PROVIDER=foreca` 和 `FORECA_TOKEN=你的密钥`。
+
+## 网址
+
+| 网址 | 说明 |
+| --- | --- |
+| `/`、`/{渠道}/` | 按访客位置跳转到最近的城市 |
+| `/{渠道}/{语言}/w/{城市ID}` | 城市天气页（城市 ID 为 Foreca 地点 ID） |
+| `/{渠道}/{语言}/w/geo/{纬度},{经度}` | 自有产品按坐标跳转 |
+| `/{渠道}/{语言}/cities` | 已保存城市（第 2 步实现） |
+| `/api/w/{城市ID}/now` | 当前天气 JSON，前端补刷新用 |
+
+渠道：`wmi`（默认）、`mi`、`wme`、`wchyin`、`wxiaomi`、`wsearch-mi`。语言：27 种，见 `src/i18n/languages.ts`。
+
+旧网址（`/?city=&lat=&lon=`、`/{渠道}/city/{id}`、`/{渠道}/cities`、`/en/*.html` 法律页面）全部兼容。
+站内跳转始终保留 `session`、`uid`、`locale` 参数。
+
+## 代码结构
+
+```
+src/
+  app.tsx               路由、页面缓存
+  config/               渠道、阈值和缓存时长、雷达国家
+  i18n/languages.ts     27 种语言及判断规则（移植自旧站）
+  routing/urls.ts       网址生成、统计参数保留
+  geo/visitor.ts        访客位置（Cloudflare request.cf）
+  time/cityTime.ts      城市时区计算（星期、日期、当地时间）
+  weather/
+    provider.ts         天气供应商接口 —— 换供应商只需实现这个接口
+    foreca/             Foreca 客户端和数据转换
+    mock.ts             模拟数据（开发、预览）
+    icons.ts            天气代码 → 我们的图标（需求文档的映射表）
+    service.ts          天气数据模块：缓存、合并并发请求、出错时用旧数据
+  cache/store.ts        缓存（Cache API + KV 两层）
+  pages/                页面（第 1 步为功能性预览界面）
+public/                 静态文件：图标、法律页面、ads.txt、robots.txt
+test/                   自动化测试
+```
+
+## 缓存设计
+
+- **天气数据**：按城市缓存，与语言、单位无关。两层：Cloudflare Cache API（每个机房）+ Workers KV（全球一份）。
+  只用第一层的话，同一城市的访客分布在多个机房时会重复请求 Foreca。缓存时长见 `src/config/thresholds.ts`。
+- **页面**：整页按网址（不含查询参数）缓存 5 分钟，过期后先返回旧页面、后台重新生成。
+  `session`、`uid` 因人而异，不进缓存 key；页面里的站内链接由浏览器脚本补上这些参数。
+- **和时间有关的显示**（"今天"、"现在"、"X 分钟前"）在浏览器里按城市时区计算，不写死在缓存的页面里。
+
+## 部署（第 6 步会补充完整说明）
+
+```bash
+npx wrangler kv namespace create WEATHER_KV   # 把输出的 id 填进 wrangler.toml
+npx wrangler secret put FORECA_TOKEN
+npx wrangler deploy
+```
+
+## 待核实（Foreca 试用期内）
+
+- 缓存时长是否符合 Foreca 条款；带广告的网站是否属于允许的商业用途
+- 地点接口返回的英文国家名写法，用于判断雷达覆盖（`src/config/radar.ts`）
+- 日预报 `dataset=full` 是否包含日出日落等字段
