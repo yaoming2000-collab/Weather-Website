@@ -4,6 +4,10 @@ main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
 # 静态文件（图标、法律页面、ads.txt 等）。存在的文件直接由 Cloudflare 返回，不经过 Worker。
+# 先打包浏览器脚本（public/static/app.js）
+[build]
+command = "npm run build:client"
+
 [assets]
 directory = "./public"
 # 保持旧网址原样可用（如 /en/term-of-use.html），不做去掉 .html 的跳转

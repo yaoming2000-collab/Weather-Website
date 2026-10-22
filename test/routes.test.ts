@@ -83,17 +83,49 @@ describe('city page', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('<meta name="robots" content="noindex"/>');
-    expect(html).toContain('Cheney');
-    expect(html).toContain('data-tz="America/Chicago"');
+    expect(html).toContain('<h1>Cheney</h1>');
+    expect(html).toContain('"tz":"America/Chicago"');
     // 15 天预报：城市当地日期从 10 月 21 日开始（UTC 03:00 时美国中部还是 21 日）
     expect(html).toContain('data-date="2026-10-21"');
-    expect(html).toMatch(/<span class="wd">Wed<\/span>/);
+    expect(html).toMatch(/data-weekday="2026-10-21">Wed</);
+    // 温度带原始摄氏度，供浏览器换算华氏度
+    expect(html).toMatch(/data-c="-?\d+(\.\d+)?"/);
+    // 三个广告位占位
+    for (const slot of ['home_1', 'home_2', 'home_3']) expect(html).toContain(`data-slot="${slot}"`);
+    expect(html).toMatch(/<script src="\/static\/app.js" defer/);
     expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
   });
 
   it('shows a dash instead of 0 when a value is missing', async () => {
     const html = await (await app().request(req('/wmi/en/w/100108410'))).text();
-    expect(html).toContain('Visibility<b>— km</b>');
+    expect(html).toMatch(/Visibility<\/h3><div class="big"><bdi>—<\/bdi>/);
+  });
+
+  it('uses the old site translations', async () => {
+    const zh = await (await app().request(req('/wmi/zh/w/101796236'))).text();
+    expect(zh).toContain('逐小时预报');
+    expect(zh).toContain('lang="zh-Hans"');
+    const tr = await (await app().request(req('/wmi/tr/w/100745044'))).text();
+    expect(tr).toContain('lang="tr"');
+  });
+
+  it('renders the hourly, 15-day and air quality subpages', async () => {
+    for (const [sub, text] of [['hourly', 'Next 24 hours'], ['15day', '15-Day Forecast'], ['air', 'Pollutants']] as const) {
+      const res = await app().request(req(`/wmi/en/w/102643743/${sub}`));
+      expect(res.status, sub).toBe(200);
+      const html = await res.text();
+      expect(html, sub).toContain(text);
+      expect(html, sub).toContain('href="/wmi/en/w/102643743"');
+    }
+    expect((await app().request(req('/wmi/en/w/102643743/nope'))).status).toBe(404);
+  });
+
+  it('renders the saved cities page shell', async () => {
+    const res = await app().request(req('/wxiaomi/vi/cities'));
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('data-saved-list');
+    expect(html).toContain('"channel":"wxiaomi"');
   });
 
   it('sets right-to-left for Arabic', async () => {
@@ -117,6 +149,27 @@ describe('city page', () => {
 });
 
 describe('api', () => {
+  it('searches cities', async () => {
+    const res = await app().request(req('/api/search?q=ist&lang=tr'));
+    const body = (await res.json()) as { items: Array<{ id: string; name: string }> };
+    expect(body.items[0]).toMatchObject({ id: '100745044', name: 'Istanbul' });
+    const short = (await (await app().request(req('/api/search?q=i'))).json()) as { items: unknown[] };
+    expect(short.items).toEqual([]);
+  });
+
+  it('finds the nearest city for migrating old saved cities', async () => {
+    const res = await app().request(req('/api/near?lat=55.75&lon=37.61'));
+    expect(await res.json()).toMatchObject({ id: '100524901', name: 'Moscow' });
+    expect((await app().request(req('/api/near?lat=999&lon=0'))).status).toBe(400);
+  });
+
+  it('returns saved city cards and skips unknown ids', async () => {
+    const res = await app().request(req('/api/cities?ids=102643743,999999,101581130'));
+    const body = (await res.json()) as { items: Array<{ id: string; temperature: number | null }> };
+    expect(body.items.map((i) => i.id)).toEqual(['102643743', '101581130']);
+    expect(typeof body.items[0]!.temperature).toBe('number');
+  });
+
   it('returns the current weather as JSON for the browser refresh', async () => {
     const res = await app().request(req('/api/w/102643743/now'));
     expect(res.status).toBe(200);
