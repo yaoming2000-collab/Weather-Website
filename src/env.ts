@@ -6,6 +6,8 @@ export interface Env {
   FORECA_TOKEN?: string;
   /** 天气数据全局缓存 */
   WEATHER_KV?: KVNamespace;
+  /** 猜一猜计数和排行榜（第 3 步）。没有绑定时退回内存存储 */
+  DB?: D1Database;
   /** 静态文件 */
   ASSETS?: Fetcher;
 }

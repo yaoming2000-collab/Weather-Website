@@ -34,6 +34,11 @@ export class WeatherService {
     return this.provider.name;
   }
 
+  /** 当前时间（测试中可替换），页面计算"现在"相关的内容时用它，和数据保持一致 */
+  nowMs(): number {
+    return this.now();
+  }
+
   private key(kind: string, ...parts: string[]): string {
     return ['v1', this.provider.name, kind, ...parts].join(':');
   }
@@ -167,7 +172,11 @@ export class WeatherService {
     ]);
 
     const today = localDate(this.now(), location.timezone);
-    const climate = await this.climateDay(id, monthDayOf(today)).catch(this.soft('climate', id));
+    // 往年同日（今天的对比）+ 往年每月（15 天对比图、降水对比）。两者都长期缓存，几乎不产生调用。
+    const [climate, climateMonthly] = await Promise.all([
+      this.climateDay(id, monthDayOf(today)).catch(this.soft('climate', id)),
+      this.climateMonthly(id).catch(this.soft('climateMonthly', id)),
+    ]);
 
     // 降雨时间轴：只在可能下雨时才请求（需求文档"降雨时间轴"）
     let nowcast: Fetched<NowcastPoint[]> | null = null;
@@ -176,7 +185,7 @@ export class WeatherService {
       nowcast = await this.nowcast(id, radar).catch(this.soft('nowcast', id));
     }
 
-    return { location, today, current, hourly, daily, air, climate, nowcast, radar };
+    return { location, today, current, hourly, daily, air, climate, climateMonthly, nowcast, radar };
   }
 
   private soft(what: string, id: string) {
@@ -209,6 +218,7 @@ export interface CityBundle {
   daily: Fetched<DailyPoint[]> | null;
   air: Fetched<AirQualityPoint[]> | null;
   climate: Fetched<ClimateDay> | null;
+  climateMonthly: Fetched<ClimateMonth[]> | null;
   nowcast: Fetched<NowcastPoint[]> | null;
   radar: boolean;
 }

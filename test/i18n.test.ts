@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { LANGUAGES } from '../src/i18n/languages';
 import { messages, missingKeys, t } from '../src/i18n/t';
 import { ICON_KEYS } from '../src/weather/icons';
+import { LIFE } from '../src/config/features';
+import { guessButtonKey, wordingKey, type ClimateLevel, type ClimateTone, type GuessChoice } from '../src/features/climate';
+import { LIFE_INDEX_KEYS } from '../src/features/life';
 
 describe('translations', () => {
   it('loads a translation file for each of the 27 languages', () => {
@@ -30,4 +33,23 @@ describe('translations', () => {
     expect(t('en', 'UpdatedMinutesAgo', { n: 7 })).toBe('Updated 7 min ago');
     expect(t('en', 'CityWeatherTitle', { city: 'Riyadh' })).toBe('Riyadh Weather');
   });
+
+  it('has English text for every key the step-3 features can produce', () => {
+    const keys: string[] = [];
+    const levels: ClimateLevel[] = ['much-warmer', 'warmer', 'normal', 'cooler', 'much-cooler'];
+    const tones: ClimateTone[] = ['hot', 'mild', 'cold'];
+    const choices: GuessChoice[] = ['colder', 'same', 'warmer'];
+    for (const l of levels) for (const tn of tones) keys.push(`ClimateLabel_${wordingKey(l, tn)}`, `ClimateVerdict_${wordingKey(l, tn)}`);
+    for (const ch of choices) for (const tn of tones) keys.push(`GuessButton_${guessButtonKey(ch, tn)}`);
+    for (const kind of ['rain', 'sleet', 'snow']) {
+      for (const st of ['starting', 'startingFor', 'stopping', 'continuing', 'startingSoon', 'startingLater', 'stoppingSoon', 'stoppingLater']) {
+        keys.push(`Nowcast_${st}_${kind}`);
+      }
+    }
+    for (const k of LIFE_INDEX_KEYS) keys.push(`LifeTitle_${k}`);
+    for (const k of ['running', 'laundry', 'carwash', 'sunscreen']) for (const r of ['good', 'fair', 'poor']) keys.push(`Life_${k}_${r}`);
+    for (const { band } of LIFE.clothing) keys.push(`Life_clothing_${band}`, `ClothingTip_${band}`);
+    for (const key of keys) expect(t('en', key), key).not.toBe(key);
+  });
 });
+

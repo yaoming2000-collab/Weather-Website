@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { MemoryStore } from '../src/cache/store';
+import { MemoryFeatureStore } from '../src/features/store';
 import { MockProvider } from '../src/weather/mock';
 import { ProviderError, type WeatherProvider } from '../src/weather/provider';
 import { WeatherService } from '../src/weather/service';
@@ -8,7 +9,10 @@ import { WeatherService } from '../src/weather/service';
 const NOW = Date.UTC(2026, 9, 22, 3, 0);
 
 function app(provider: WeatherProvider = new MockProvider(() => NOW)) {
-  return createApp({ weather: () => new WeatherService(provider, new MemoryStore(() => NOW), () => NOW, () => undefined) });
+  return createApp({
+    weather: () => new WeatherService(provider, new MemoryStore(() => NOW), () => NOW, () => undefined),
+    features: () => new MemoryFeatureStore(),
+  });
 }
 
 function req(path: string, init: { headers?: Record<string, string>; cf?: Record<string, unknown> } = {}) {
@@ -177,5 +181,45 @@ describe('api', () => {
     expect(body.id).toBe('102643743');
     expect(body.fetchedAt).toBe(NOW);
     expect(typeof body.current.icon).toBe('string');
+  });
+});
+
+describe('guess and ranking api', () => {
+  const post = (path: string, body: unknown) =>
+    new Request(`https://weather.itsfunmag.com${path}`, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+
+  it('counts guesses for the city date and returns totals', async () => {
+    const a = app();
+    // Cheney 在 UTC 03:00 时当地还是 10 月 21 日
+    let res = await a.request(post('/api/w/104686017/guess', { date: '2026-10-21', choice: 'warmer' }));
+    expect(res.status).toBe(200);
+    await a.request(post('/api/w/104686017/guess', { date: '2026-10-21', choice: 'colder' }));
+    res = await a.request(req('/api/w/104686017/guess?date=2026-10-21'));
+    expect(await res.json()).toEqual({ date: '2026-10-21', counts: { colder: 1, same: 0, warmer: 1 }, total: 2 });
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    // 页面缓存跨过午夜时，前一天的日期也接受
+    expect((await a.request(post('/api/w/104686017/guess', { date: '2026-10-20', choice: 'same' }))).status).toBe(200);
+  });
+
+  it('rejects bad choices, dates outside today and unknown cities', async () => {
+    const a = app();
+    expect((await a.request(post('/api/w/104686017/guess', { date: '2026-10-21', choice: 'hotter' }))).status).toBe(400);
+    expect((await a.request(post('/api/w/104686017/guess', { date: '2026-10-25', choice: 'same' }))).status).toBe(400);
+    expect((await a.request(post('/api/w/104686017/guess', { choice: 'same' }))).status).toBe(400);
+    expect((await a.request(post('/api/w/999999/guess', { date: '2026-10-21', choice: 'same' }))).status).toBe(404);
+    expect((await a.request(req('/api/w/104686017/guess?date=bad'))).status).toBe(400);
+  });
+
+  it('ranks cities that visitors have opened, without extra weather calls', async () => {
+    const a = app();
+    expect(await (await a.request(req('/api/ranking'))).json()).toMatchObject({ warmest: [], coldest: [] });
+    for (const id of ['102643743', '100524901', '101581130']) await a.request(req(`/wmi/en/w/${id}`));
+    const body = (await (await a.request(req('/api/ranking'))).json()) as {
+      warmest: Array<{ cityId: string; deltaMax: number }>;
+      coldest: Array<{ cityId: string; deltaMax: number }>;
+    };
+    const ids = [...body.warmest, ...body.coldest].map((r) => r.cityId).sort();
+    expect(ids).toEqual(['100524901', '101581130', '102643743']);
+    for (const r of body.warmest) expect(r.deltaMax).toBeGreaterThan(0);
   });
 });

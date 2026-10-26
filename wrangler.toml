@@ -18,6 +18,19 @@ html_handling = "none"
 binding = "WEATHER_KV"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
+# 猜一猜计数和排行榜（第 3 步）。部署前：
+#   npx wrangler d1 create weather-features                         # 把输出的 database_id 填到这里
+#   npx wrangler d1 migrations apply weather-features --remote      # 建表（migrations/ 目录）
+[[d1_databases]]
+binding = "DB"
+database_name = "weather-features"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# 定时任务：每天 03:17（UTC）清理过期的猜一猜计数（保留 7 天）和排行榜数据（保留 2 天）
+[triggers]
+crons = ["17 3 * * *"]
+
 [vars]
 # foreca = 调用真实接口（需要 FORECA_TOKEN 密钥）；mock = 使用模拟数据（开发、预览用）
 WEATHER_PROVIDER = "foreca"
@@ -26,7 +39,8 @@ WEATHER_PROVIDER = "foreca"
 
 # ---------------------------------------------------------------------------
 # 测试环境（预览用）：npx wrangler deploy --env preview
-# 使用模拟数据，不需要 Foreca 密钥，也不需要创建 KV（数据缓存自动退回每个机房各自的缓存）。
+# 使用模拟数据，不需要 Foreca 密钥，也不需要创建 KV 和 D1：
+#   数据缓存自动退回每个机房各自的缓存；猜一猜和排行榜退回内存（Worker 重启后清零，预览够用）。
 # 部署后的地址：https://weather-itsfunmag-preview.<你的账号子域名>.workers.dev
 # 详细步骤见 docs/deploy-preview.md
 # ---------------------------------------------------------------------------
