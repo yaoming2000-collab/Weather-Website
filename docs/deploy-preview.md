@@ -22,10 +22,10 @@
 ```bash
 git clone https://github.com/yaoming2000-collab/Weather-Website.git
 cd Weather-Website
-git checkout step-2-pages
+git checkout step-3b-ui
 ```
 
-**为什么用 step-2-pages 分支**：开发按步骤分支进行，这个分支包含第 1、2 步的全部内容。以后有新的分支，Claude 会告诉你部署哪一个。
+**为什么用 step-3b-ui 分支**：开发按步骤分支进行，每个分支都包含之前所有步骤的内容。这个分支是目前最新的，有新视觉和全部新页面。以后有新的分支，Claude 会告诉你部署哪一个。
 
 ## 第 2 步：安装依赖
 
@@ -72,6 +72,8 @@ https://weather-itsfunmag-preview.<你的账号子域名>.workers.dev
 - [ ] 在"我的城市"搜索框输入 `is`，能搜到伊斯坦布尔
 - [ ] 点右上角 °C 能切换成 °F
 - [ ] 把网址里的 `/en/` 改成 `/ar/`，页面变成阿拉伯语、从右到左排列
+- [ ] 点顶部的"明天""7 天"，点温度下方的"比往年……"标签，点生活指数的任意一行，都能进入对应页面
+- [ ] 在往年对比页点一个答案，下面出现揭晓结果；刷新页面后直接显示结果
 
 把测试网址发给 Darren 即可。
 

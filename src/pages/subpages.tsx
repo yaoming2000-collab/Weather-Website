@@ -3,9 +3,9 @@ import { intlLocale, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { hourLabel, weekdayLabel } from '../time/cityTime';
 import { aqiLevel, aqiPercent, conditionKey, tempRange, uvLevelKey, windDirText } from '../weather/derive';
-import { backgroundFor } from '../weather/icons';
-import { AdSlot, DASH, Footer, Icon, Layout, Precip, Speed, SubBar, Temp } from './components';
-import { cityPageData, DayRow, devNote, type PageProps } from './home';
+import { AdSlot, DASH, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
+import { G } from './glyphs';
+import { cityPageData, DayRow, devNote, pageSky, type PageProps } from './home';
 
 const pct = (n: number | null | undefined) => (n === null || n === undefined ? DASH : `${Math.round(n)}%`);
 
@@ -30,7 +30,7 @@ export function HourlyPage(p: PageProps) {
     </div>
   );
   return (
-    <Layout lang={lang} title={`${title} · ${bundle.location.name}`} bg={backgroundFor(bundle.current.data.icon)} devNote={devNote(p.providerName)} pageData={cityPageData(p)}>
+    <Layout lang={lang} title={`${title} · ${bundle.location.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={cityPageData(p)}>
       <SubBar location={bundle.location} channel={channel} lang={lang} title={title} />
       <section class="card">{hours.slice(0, 12).map(row)}</section>
       <AdSlot slot="sub_1" lang={lang} />
@@ -87,7 +87,7 @@ export function DailyPage(p: PageProps) {
     );
   };
   return (
-    <Layout lang={lang} title={`${title} · ${bundle.location.name}`} bg={backgroundFor(bundle.current.data.icon)} devNote={devNote(p.providerName)} pageData={cityPageData(p)}>
+    <Layout lang={lang} title={`${title} · ${bundle.location.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={cityPageData(p)}>
       <SubBar location={bundle.location} channel={channel} lang={lang} title={title} />
       <section class="card">{days.slice(0, 7).map(item)}</section>
       <AdSlot slot="sub_1" lang={lang} />
@@ -116,12 +116,16 @@ export function AirPage(p: PageProps) {
   const max = Math.max(100, ...points.map((a) => a.aqi ?? 0));
   const title = t(lang, 'WeatherAirQuality');
   return (
-    <Layout lang={lang} title={`${title} · ${bundle.location.name}`} bg={backgroundFor(bundle.current.data.icon)} devNote={devNote(p.providerName)} pageData={cityPageData(p)}>
+    <Layout lang={lang} title={`${title} · ${bundle.location.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={cityPageData(p)}>
       <SubBar location={bundle.location} channel={channel} lang={lang} title={title} />
       <section class="card">
-        <div style="display:flex;align-items:baseline;gap:12px">
-          <span class="aqv" style="font-size:56px">{now?.aqi ?? DASH}</span>
-          <span style={`color:${level?.color ?? 'inherit'};font-weight:600`}>{level ? t(lang, level.key) : t(lang, 'Unavailable')}</span>
+        <Sec icon={G.leaf()} title={t(lang, 'WeatherAirQuality')} />
+        <div class="aq">
+          <span class="v" style="font-size:56px">{now?.aqi ?? DASH}</span>
+          <span class="l">
+            <i class="dot" style={`background:${level?.color ?? '#cbd5e1'};margin-inline-end:6px;display:inline-block`} />
+            {level ? t(lang, level.key) : t(lang, 'Unavailable')}
+          </span>
         </div>
         <div class="meter">{now?.aqi !== null && now?.aqi !== undefined ? <b style={`inset-inline-start:${aqiPercent(now.aqi).toFixed(1)}%`} /> : null}</div>
         {now?.pollutant ? (
@@ -132,7 +136,7 @@ export function AirPage(p: PageProps) {
       </section>
 
       <section class="card">
-        <h2>{t(lang, 'AirQualityNext24')}</h2>
+        <Sec icon={G.clock()} title={t(lang, 'AirQualityNext24')} />
         <div class="aqbars">
           {points.map((a) => (
             <span
@@ -152,7 +156,7 @@ export function AirPage(p: PageProps) {
       <AdSlot slot="sub_1" lang={lang} />
 
       <section class="card">
-        <h2>{t(lang, 'Pollutants')}</h2>
+        <Sec icon={G.leaf()} title={t(lang, 'Pollutants')} />
         <div class="pollutants">
           {POLLUTANTS.map((x) => (
             <div>
@@ -173,13 +177,16 @@ export function AirPage(p: PageProps) {
 export function CitiesPage(props: { channel: Channel; lang: Lang; providerName: string }) {
   const { lang, channel } = props;
   return (
-    <Layout lang={lang} title={t(lang, 'MyCitiesTitle')} bg="night-cloudy" devNote={devNote(props.providerName)} pageData={{ channel, page: 'cities' }}>
+    <Layout lang={lang} title={t(lang, 'MyCitiesTitle')} devNote={devNote(props.providerName)} pageData={{ channel, page: 'cities' }}>
       <header class="top">
         <div class="place">
           <a class="back" data-nav href={`/${channel}/?lang=${lang}`}>
-            {lang === 'ar' || lang === 'he' ? '→' : '←'} {t(lang, 'CurrentLocation')}
+            {G.back()}
+            <span>{t(lang, 'CurrentLocation')}</span>
           </a>
-          <h1>{t(lang, 'MyCitiesTitle')}</h1>
+          <h1>
+            <span>{t(lang, 'MyCitiesTitle')}</span>
+          </h1>
         </div>
       </header>
       <form class="search" role="search" data-search>
@@ -198,7 +205,7 @@ export function CitiesPage(props: { channel: Channel; lang: Lang; providerName: 
 export function MessagePage(props: { lang: Lang; titleKey: string; textKey: string }) {
   const { lang } = props;
   return (
-    <Layout lang={lang} title={t(lang, props.titleKey)} bg="night-cloudy" pageData={{}}>
+    <Layout lang={lang} title={t(lang, props.titleKey)} pageData={{}}>
       <section class="msg">
         <h1>{t(lang, props.titleKey)}</h1>
         <p style="color:var(--mut)">{t(lang, props.textKey)}</p>

@@ -87,7 +87,7 @@ describe('city page', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('<meta name="robots" content="noindex"/>');
-    expect(html).toContain('<h1>Cheney</h1>');
+    expect(html).toMatch(/<h1>.*?<span>Cheney<\/span><\/h1>/s);
     expect(html).toContain('"tz":"America/Chicago"');
     // 15 天预报：城市当地日期从 10 月 21 日开始（UTC 03:00 时美国中部还是 21 日）
     expect(html).toContain('data-date="2026-10-21"');
@@ -102,7 +102,7 @@ describe('city page', () => {
 
   it('shows a dash instead of 0 when a value is missing', async () => {
     const html = await (await app().request(req('/wmi/en/w/100108410'))).text();
-    expect(html).toMatch(/Visibility<\/h3><div class="big"><bdi>—<\/bdi>/);
+    expect(html).toMatch(/Visibility<\/span><\/h3><div class="big">—/);
   });
 
   it('uses the old site translations', async () => {
@@ -221,5 +221,72 @@ describe('guess and ranking api', () => {
     const ids = [...body.warmest, ...body.coldest].map((r) => r.cityId).sort();
     expect(ids).toEqual(['100524901', '101581130', '102643743']);
     for (const r of body.warmest) expect(r.deltaMax).toBeGreaterThan(0);
+  });
+});
+
+describe('step 3 pages', () => {
+  it('renders tomorrow, the day after, the week, the climate page and all life pages', async () => {
+    const a = app();
+    const pages: Array<[string, string[]]> = [
+      ['tomorrow', ['day_1', 'day_2']],
+      ['day-after', ['day_1', 'day_2']],
+      ['week', ['week_1', 'week_2']],
+      ['climate', ['climate_1', 'climate_2']],
+      ['life/running', ['life_1', 'life_2']],
+      ['life/laundry', ['life_1']],
+      ['life/carwash', ['life_1']],
+      ['life/clothing', ['life_1']],
+      ['life/sunscreen', ['life_1']],
+    ];
+    for (const [sub, slots] of pages) {
+      const res = await a.request(req(`/wmi/en/w/102643743/${sub}`));
+      expect(res.status, sub).toBe(200);
+      const html = await res.text();
+      for (const slot of slots) expect(html, `${sub} ${slot}`).toContain(`data-slot="${slot}"`);
+      expect(html, sub).toContain('href="/wmi/en/w/102643743"');
+    }
+    expect((await a.request(req('/wmi/en/w/102643743/life/swimming'))).status).toBe(404);
+  });
+
+  it('links the home page to the new pages', async () => {
+    const html = await (await app().request(req('/wmi/en/w/102643743'))).text();
+    for (const sub of ['tomorrow', 'day-after', 'week', 'climate', 'life/running', 'life/sunscreen']) {
+      expect(html, sub).toContain(`href="/wmi/en/w/102643743/${sub}"`);
+    }
+    expect(html).toContain('data-vote="102643743"');
+  });
+
+  it('puts the guess and its answer on the climate page', async () => {
+    const html = await (await app().request(req('/wmi/en/w/104686017/climate'))).text();
+    expect(html).toMatch(/data-guess="[^"]*" data-city="104686017" data-date="2026-10-21" data-answer="(colder|same|warmer)"/);
+    for (const c of ['colder', 'same', 'warmer']) expect(html).toContain(`data-choice="${c}"`);
+    expect(html).toContain('href="/wmi/en/ranking"');
+  });
+
+  it('says so when a city has no long-term averages', async () => {
+    const noClimate: WeatherProvider = new Proxy(new MockProvider(() => NOW), {
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver);
+        if (prop === 'climateDay' || prop === 'climateMonthly') return () => Promise.reject(new ProviderError('plan', 403));
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const a = app(noClimate);
+    const home = await (await a.request(req('/wmi/en/w/102643743'))).text();
+    expect(home).not.toContain('class="vs"');
+    const res = await a.request(req('/wmi/en/w/102643743/climate'));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("We don&#39;t have long-term averages");
+  });
+
+  it('renders the ranking page with cities visitors opened', async () => {
+    const a = app();
+    for (const id of ['102643743', '100524901', '101581130', '100108410']) await a.request(req(`/wmi/en/w/${id}`));
+    const res = await a.request(req('/wxiaomi/tr/ranking'));
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('class="rank"');
+    expect(html).toContain('href="/wxiaomi/tr/w/');
+    expect((await a.request(req('/foo/en/ranking'))).status).toBe(404);
   });
 });

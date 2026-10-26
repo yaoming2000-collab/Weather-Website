@@ -40,3 +40,7 @@ export function citiesPath(channel: Channel, lang: Lang): string {
 export function pageCacheKey(url: URL): string {
   return `${url.origin}${url.pathname}`;
 }
+
+export function rankingPath(channel: Channel, lang: Lang): string {
+  return `/${channel}/${lang}/ranking`;
+}

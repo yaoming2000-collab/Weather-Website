@@ -17,7 +17,9 @@ import {
   storage,
   type SavedCity,
 } from './lib/saved';
+import { entryKey, GUESS_KEY, isChoice, percentRight, readBook, VOTE_KEY, writeBook, type Choice, type Counts } from './lib/interact';
 import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS } from './lib/time';
+import { drawCard, shareOrDownload } from './share';
 import { defaultSystem, formatPrecip, formatSpeed, formatTemp, formatTempDelta, type UnitSystem } from './lib/units';
 
 interface PageData {
@@ -78,6 +80,7 @@ function currentSystem(): UnitSystem {
 function applyUnits(system: UnitSystem, root: ParentNode = document) {
   for (const el of $$('[data-c]', root)) el.textContent = formatTemp(Number(el.dataset.c), system);
   for (const el of $$('[data-dc]', root)) el.textContent = formatTempDelta(Number(el.dataset.dc), system);
+  for (const el of $$('[data-dca]', root)) el.textContent = formatTempDelta(Math.abs(Number(el.dataset.dca)), system).replace('+', '');
   for (const el of $$('[data-ms]', root)) {
     const f = formatSpeed(Number(el.dataset.ms), system);
     el.textContent = f.value;
@@ -109,7 +112,8 @@ function applyTime() {
   }
 
   // 逐小时：隐藏已经过去的小时，第一个未过去的小时标为"现在"
-  for (const list of [$$('.hours .hour'), $$('.row[data-time]')]) {
+  for (const strip of [...$$('.hours'), ...($$('.row[data-time]').length ? [document.body] : [])]) {
+    const list = strip === document.body ? $$('.row[data-time]') : $$('.hour:not(.sunev)', strip);
     if (!list.length) continue;
     const past = pastHourCount(list.map((el) => el.dataset.time ?? ''), now);
     list.forEach((el, i) => {
@@ -118,6 +122,9 @@ function applyTime() {
       const label = el.querySelector<HTMLElement>('[data-hour-label]');
       if (label) label.textContent = i === past ? s('NowLabel') : label.dataset.hourLabel ?? '';
     });
+    // 日出日落：早于"现在"那一格的隐藏（它们的时间是当地时间，没有时差，按字符串比较）
+    const first = list[past]?.dataset.time?.slice(0, 16);
+    for (const ev of $$('.hour.sunev', strip)) ev.hidden = !!first && (ev.dataset.time ?? '') < first;
   }
 
   for (const el of $$('[data-fetched]')) {
@@ -326,6 +333,132 @@ function setupSearch() {
   });
 }
 
+// ---------- 6. 猜一猜（往年对比页） ----------
+
+function readCounts(j: unknown): Counts | null {
+  const c = (j as { counts?: Counts })?.counts;
+  return c && typeof c.colder === 'number' ? c : null;
+}
+
+function setupGuess() {
+  const box = document.querySelector<HTMLElement>('[data-guess]');
+  const reveal = document.querySelector<HTMLElement>('[data-reveal]');
+  if (!box || !reveal) return;
+  const city = box.dataset.city ?? '';
+  const date = box.dataset.date ?? '';
+  const answer = box.dataset.answer as Choice;
+  const minVotes = Number(box.dataset.minVotes ?? 20);
+  const key = entryKey(city, date);
+  const resultEl = reveal.querySelector<HTMLElement>('[data-guess-result]');
+  const pctEl = reveal.querySelector<HTMLElement>('[data-guess-percent]');
+
+  const showPercent = (counts: Counts | null) => {
+    if (!pctEl || !counts) return;
+    const p = percentRight(counts, answer, minVotes);
+    pctEl.textContent = p === null ? '' : s('GuessPercentRight', { percent: p });
+  };
+
+  const open = (choice: Choice, animate: boolean) => {
+    box.toggleAttribute('data-done', true);
+    for (const b of $$<HTMLButtonElement>('[data-choice]', box)) b.setAttribute('aria-pressed', String(b.dataset.choice === choice));
+    if (resultEl) resultEl.textContent = s(choice === answer ? 'GuessRight' : 'GuessWrong');
+    reveal.classList.add('on');
+    if (animate) reveal.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+  };
+
+  const previous = readBook(storage.get(GUESS_KEY))[key]?.v;
+  if (isChoice(previous)) {
+    open(previous, false);
+    fetch(`/api/w/${encodeURIComponent(city)}/guess?date=${encodeURIComponent(date)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => showPercent(readCounts(j)))
+      .catch(() => undefined);
+    return;
+  }
+
+  for (const b of $$<HTMLButtonElement>('[data-choice]', box)) {
+    b.addEventListener('click', async () => {
+      const choice = b.dataset.choice;
+      if (!isChoice(choice) || box.hasAttribute('data-done')) return;
+      storage.set(GUESS_KEY, JSON.stringify(writeBook(readBook(storage.get(GUESS_KEY)), key, choice, Date.now())));
+      open(choice, true);
+      try {
+        const res = await fetch(`/api/w/${encodeURIComponent(city)}/guess`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date, choice }),
+        });
+        showPercent(res.ok ? readCounts(await res.json()) : null);
+      } catch {
+        // 计数失败不影响揭晓
+      }
+    });
+  }
+}
+
+// ---------- 7. 预报准吗（首页） ----------
+
+function track(event: string, params: Record<string, string>) {
+  const w = window as unknown as { gtag?: (...a: unknown[]) => void; dataLayer?: unknown[] };
+  if (typeof w.gtag === 'function') w.gtag('event', event, params);
+  else (w.dataLayer ??= []).push({ event, ...params });
+}
+
+function setupVote() {
+  const box = document.querySelector<HTMLElement>('[data-vote]');
+  if (!box || !data.tz) return;
+  const city = box.dataset.vote ?? '';
+  const key = entryKey(city, cityToday(Date.now(), data.tz));
+  const done = (v: string) => {
+    box.toggleAttribute('data-done', true);
+    for (const b of $$<HTMLButtonElement>('[data-vote-value]', box)) {
+      b.setAttribute('aria-pressed', String(b.dataset.voteValue === v));
+      b.disabled = true;
+    }
+    const p = box.querySelector('p');
+    if (p) p.textContent = s('ForecastFeedbackThanks');
+  };
+  const prev = readBook(storage.get(VOTE_KEY))[key]?.v;
+  if (prev === 'up' || prev === 'down') return done(prev);
+  for (const b of $$<HTMLButtonElement>('[data-vote-value]', box)) {
+    b.addEventListener('click', () => {
+      const v = b.dataset.voteValue ?? '';
+      if (v !== 'up' && v !== 'down') return;
+      storage.set(VOTE_KEY, JSON.stringify(writeBook(readBook(storage.get(VOTE_KEY)), key, v, Date.now())));
+      // 需求文档：GA4 事件 forecast_feedback（参数：城市 ID、赞或踩）
+      track('forecast_feedback', { city_id: city, value: v });
+      done(v);
+    });
+  }
+}
+
+// ---------- 8. 分享卡片 ----------
+
+function setupShare() {
+  for (const b of $$<HTMLButtonElement>('[data-share]')) {
+    b.addEventListener('click', async () => {
+      const delta = Math.abs(Number(b.dataset.shareDelta ?? 0));
+      const n = formatTempDelta(delta, currentSystem()).replace('+', '');
+      const verdict = (b.dataset.shareTpl ?? '').split('{delta}').join(n);
+      const [y, m, d] = (b.dataset.shareDate ?? '').split('-').map(Number) as [number, number, number];
+      const dateLabel = new Intl.DateTimeFormat(data.intl, { month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, d, 12)));
+      b.disabled = true;
+      try {
+        const blob = await drawCard(
+          { city: b.dataset.shareCity ?? '', verdict, color: b.dataset.shareColor ?? '#f97316', dateLabel, site: location.host },
+          document.documentElement.dir === 'rtl',
+        );
+        if (blob) {
+          const result = await shareOrDownload(blob, 'weather-vs-usual.png', `${b.dataset.shareCity}: ${verdict}`);
+          if (result !== 'cancelled') track('climate_share', { city_id: data.city?.id ?? '', method: result });
+        }
+      } finally {
+        b.disabled = false;
+      }
+    });
+  }
+}
+
 // ---------- 启动 ----------
 
 function init() {
@@ -350,6 +483,10 @@ function init() {
     void renderSavedList();
     setupSearch();
   }
+
+  setupGuess();
+  setupVote();
+  setupShare();
 
   void refreshCurrent();
   setInterval(applyTime, 60_000);

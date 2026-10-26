@@ -6,6 +6,10 @@ import { fallbackCoords, parseCoords, parseLatLonPair, visitorCoords, type Coord
 import { isLang, resolveLanguage, type Lang } from './i18n/languages';
 import { HomePage, type PageProps } from './pages/home';
 import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage } from './pages/subpages';
+import { ClimatePage, RankingPage } from './pages/climate';
+import { DayPage, WeekPage } from './pages/day';
+import { LifePage } from './pages/life';
+import { isLifeIndexKey, type LifeIndexKey } from './features/life';
 import { citiesPath, cityPath, pageCacheKey, withNavParams } from './routing/urls';
 import { RANKING } from './config/features';
 import { GUESS_CHOICES, type GuessChoice } from './features/climate';
@@ -27,8 +31,12 @@ const SUBPAGES = {
   hourly: HourlyPage,
   '15day': DailyPage,
   air: AirPage,
+  tomorrow: (p: PageProps) => DayPage({ ...p, offset: 1 }),
+  'day-after': (p: PageProps) => DayPage({ ...p, offset: 2 }),
+  week: WeekPage,
+  climate: ClimatePage,
 } as const;
-type SubPage = keyof typeof SUBPAGES;
+type SubPage = keyof typeof SUBPAGES | `life/${LifeIndexKey}`;
 
 export function createApp(
   options: { weather?: (env: Env) => WeatherService; features?: (env: Env) => FeatureStore } = {},
@@ -147,6 +155,20 @@ export function createApp(
   app.get('/:channel/:lang/w/:id/:sub', (c) => {
     const sub = c.req.param('sub');
     return sub in SUBPAGES ? cityPage(c, sub as SubPage) : c.notFound();
+  });
+  app.get('/:channel/:lang/w/:id/life/:key', (c) => {
+    const key = c.req.param('key');
+    return isLifeIndexKey(key) ? cityPage(c, `life/${key}`) : c.notFound();
+  });
+
+  /** 今天全球最反常的城市 */
+  app.get('/:channel/:lang/ranking', async (c) => {
+    const target = parseTarget(c);
+    if (!target) return c.notFound();
+    const ranking = await loadRanking(c);
+    const html = await (<RankingPage ranking={ranking} channel={target.channel} lang={target.lang} providerName={c.var.weather.providerName} />).toString();
+    c.header('Cache-Control', `public, max-age=${BROWSER_MAX_AGE}`);
+    return c.html(`<!doctype html>${html}`);
   });
 
   app.get('/:channel/:lang/cities', async (c) => {
@@ -291,13 +313,19 @@ async function store(cache: Cache, key: Request, res: Response) {
 async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: SubPage): Promise<Response> {
   try {
     const bundle = await c.var.weather.cityBundle(id);
-    // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
     const now = c.var.weather.nowMs();
-    const record = anomalyRecord(bundle, cityFeatures(bundle, now).comparison, now);
+    const features = cityFeatures(bundle, now);
+    // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
+    const record = anomalyRecord(bundle, features.comparison, now);
     if (record) waitUntil(c, c.var.features.recordAnomaly(record).catch((e) => console.warn('[ranking] record failed', e)));
-    const props: PageProps = { bundle, channel, lang, providerName: c.var.weather.providerName };
-    const Page = sub ? SUBPAGES[sub] : HomePage;
-    const html = await (<Page {...props} />).toString();
+    const props: PageProps = { bundle, features, channel, lang, providerName: c.var.weather.providerName, nowMs: now };
+    let html: string;
+    if (sub?.startsWith('life/')) {
+      html = await (<LifePage {...props} indexKey={sub.slice(5) as LifeIndexKey} />).toString();
+    } else {
+      const Page = sub ? SUBPAGES[sub as keyof typeof SUBPAGES] : HomePage;
+      html = await (<Page {...props} />).toString();
+    }
     return new Response(`<!doctype html>${html}`, {
       status: 200,
       headers: {

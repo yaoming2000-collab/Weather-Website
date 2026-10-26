@@ -125,6 +125,18 @@ export function mapDaily(raw: RawDaily): DailyPoint[] {
         uvIndex: num(d.uvIndex),
         sunrise: str(d.sunrise),
         sunset: str(d.sunset),
+        maxFeelsLike: num(d.maxFeelsLikeTemp),
+        minFeelsLike: num(d.minFeelsLikeTemp),
+        maxHumidity: num(d.maxRelHumidity),
+        minHumidity: num(d.minRelHumidity),
+        windDir: num(d.windDir),
+        maxWindGust: num(d.maxWindGust),
+        cloudiness: num(d.cloudiness),
+        sunHours: num(d.sunhours),
+        moonPhase: num(d.moonPhase),
+        moonrise: str(d.moonrise),
+        moonset: str(d.moonset),
+        snowAccum: num(d.snowAccum),
       },
     ];
   });

@@ -181,6 +181,18 @@ export class MockProvider implements WeatherProvider {
         uvIndex: Math.round(rand(`${id}|du|${date}`) * 9),
         sunrise: '06:42:00',
         sunset: '17:58:00',
+        maxFeelsLike: round1(maxTemp + 1),
+        minFeelsLike: round1(minTemp - 2),
+        maxHumidity: Math.round(70 + rand(`${id}|hx|${date}`) * 28),
+        minHumidity: Math.round(30 + rand(`${id}|hn|${date}`) * 30),
+        windDir: Math.round(rand(`${id}|wd|${date}`) * 359),
+        maxWindGust: round1(6 + rand(`${id}|dg|${date}`) * 12),
+        cloudiness: Math.round(rand(`${id}|cl|${date}`) * 100),
+        sunHours: round1(rand(`${id}|sh|${date}`) * 10),
+        moonPhase: Math.round((((t / 86400_000) % 29.53) / 29.53) * 360),
+        moonrise: '19:12:00',
+        moonset: '08:40:00',
+        snowAccum: symbol[3] === '2' ? round1(rand(`${id}|sa|${date}`) * 6) : 0,
       };
     });
   }
