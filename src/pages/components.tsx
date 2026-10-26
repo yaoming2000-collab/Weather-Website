@@ -57,7 +57,9 @@ export function Icon(props: { icon: string; size?: number; cls?: string; eager?:
       alt={props.alt ?? ''}
       width={props.size ?? 32}
       height={props.size ?? 32}
-      loading={props.eager ? 'eager' : 'lazy'}
+      // 图标只有三十来张、反复使用，不做懒加载：首屏的明天/逐小时图标懒加载会晚一拍才出现
+      loading="eager"
+      fetchpriority={props.eager ? 'high' : undefined}
       decoding="async"
       data-icon={props.icon}
     />
