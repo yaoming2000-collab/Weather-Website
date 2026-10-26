@@ -3,7 +3,9 @@
  * 用于降雨时间轴：有雷达的地区缓存更短、文案可以精确到分钟。
  *
  * 匹配依据是 Foreca 地点接口返回的英文国家名。
- * 待办：Foreca 试用期内用真实数据核对国家名的写法（如 "Turkey" / "Türkiye"），并更新此表。
+ * 2026-10-26 用真实接口核实了主要市场的写法：Turkey、Vietnam、Taiwan、United States、Mexico、Spain、Bulgaria
+ * （无雷达：Saudi Arabia、Indonesia、Russia、Belarus、Hong Kong、Argentina）。
+ * 逐 15 分钟接口不返回"雷达 / 插值"的区分字段，所以只能用这张表判断。
  */
 const RADAR_COUNTRIES = new Set(
   [

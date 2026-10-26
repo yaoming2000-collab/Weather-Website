@@ -74,6 +74,10 @@ export interface DailyPoint {
   sunset: string | null;
 }
 
+/**
+ * 空气质量。Foreca 返回的是 AQI 指数（总指数和各污染物的分指数），不是浓度，所以页面不显示 µg/m³ 单位。
+ * 沙尘天气时 PM10 分指数会远超 500（2026-10-26 利雅得实测 1563），页面按"严重污染"显示。
+ */
 export interface AirQualityPoint {
   time: string;
   aqi: number | null;

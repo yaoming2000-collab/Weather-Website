@@ -109,7 +109,10 @@ export class ForecaProvider implements WeatherProvider {
   }
 
   async hourly(id: string, hours: number) {
-    return mapHourly(await this.get<RawHourly>(`/api/v1/forecast/hourly/${this.loc(id)}`, { periods: hours, lang: 'en' }));
+    // dataset=full 才包含湿度、紫外线（2026-10-26 用真实接口核实：默认数据集没有 relHumidity、uvIndex）
+    return mapHourly(
+      await this.get<RawHourly>(`/api/v1/forecast/hourly/${this.loc(id)}`, { periods: hours, dataset: 'full', lang: 'en' }),
+    );
   }
 
   async daily(id: string, days: number) {
