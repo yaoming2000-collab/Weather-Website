@@ -1,0 +1,21 @@
+# Cloudflare Worker：天气站（weather.itsfunmag.com）
+name = "weather-itsfunmag"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# 静态文件（图标、法律页面、ads.txt 等）。存在的文件直接由 Cloudflare 返回，不经过 Worker。
+[assets]
+directory = "./public"
+# 保持旧网址原样可用（如 /en/term-of-use.html），不做去掉 .html 的跳转
+html_handling = "none"
+
+# 天气数据的全局缓存（第二层缓存）。部署前用 `wrangler kv namespace create WEATHER_KV` 创建，把 id 填到这里。
+[[kv_namespaces]]
+binding = "WEATHER_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+# foreca = 调用真实接口（需要 FORECA_TOKEN 密钥）；mock = 使用模拟数据（开发、预览用）
+WEATHER_PROVIDER = "foreca"
+
+# 密钥不要写在这里，用命令设置：wrangler secret put FORECA_TOKEN
