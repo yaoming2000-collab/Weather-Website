@@ -143,20 +143,29 @@ let refreshing = false;
  * 把实况、降雨时间轴、逐小时、7 天、空气质量、各项指标和背景天空整块换成新的。
  * 只换标了 data-live 的区域，广告位不动。数据没有比现在新时什么也不做。
  */
-async function refreshLive() {
+async function refreshLive(retry = true) {
   const updated = document.querySelector<HTMLElement>('[data-fetched]');
   if (!updated || refreshing) return;
   if (Date.now() - Number(updated.dataset.fetched) < REFRESH_AFTER_MS) return;
   refreshing = true;
   try {
-    const res = await fetch(location.pathname, { headers: { Accept: 'text/html' } });
+    // no-cache：不用浏览器里的旧副本。CDN 上的页面过期时会先给旧页面、后台重新生成，所以 15 秒后再试一次
+    const res = await fetch(location.pathname, { headers: { Accept: 'text/html' }, cache: 'no-cache' });
     if (!res.ok) return;
     const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
     const fresh = doc.querySelector<HTMLElement>('[data-fetched]');
-    if (!fresh || Number(fresh.dataset.fetched) <= Number(updated.dataset.fetched)) return;
+    if (!fresh || Number(fresh.dataset.fetched) <= Number(updated.dataset.fetched)) {
+      if (retry) setTimeout(() => void refreshLive(false), 15_000);
+      return;
+    }
     for (const el of $$('[data-live]')) {
       const next = doc.querySelector(`[data-live="${el.dataset.live}"]`);
-      if (next) el.replaceWith(document.importNode(next, true));
+      if (!next) continue;
+      const node = document.importNode(next, true) as HTMLElement;
+      el.replaceWith(node);
+      // 新换上的链接补上 session、uid 等参数
+      syncNav(node);
+      if (node.matches('a[data-nav]')) node.setAttribute('href', withNav(node.getAttribute('href') ?? '/'));
     }
     const sky = document.querySelector('.sky');
     const nextSky = doc.querySelector('.sky');

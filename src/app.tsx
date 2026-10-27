@@ -51,6 +51,7 @@ export function createApp(
   // 所有响应都不让搜索引擎收录（需求文档"架构与缓存"）
   app.use('*', async (c, next) => {
     shared ??= makeWeather(c.env ?? {});
+    shared.setColo((c.req.raw as { cf?: { colo?: string } }).cf?.colo);
     c.set('weather', shared);
     sharedFeatures ??= makeFeatures(c.env ?? {});
     c.set('features', sharedFeatures);
@@ -360,7 +361,7 @@ async function store(cache: Cache, key: Request, res: Response) {
 
 async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: SubPage): Promise<Response> {
   try {
-    const bundle = await c.var.weather.cityBundle(id);
+    const bundle = await c.var.weather.cityBundle(id, (p) => waitUntil(c, p));
     const now = c.var.weather.nowMs();
     const features = cityFeatures(bundle, now);
     // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）

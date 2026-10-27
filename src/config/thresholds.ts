@@ -60,19 +60,20 @@ export const HOURS_SHOWN = 25;
 
 /**
  * 取不到的数据也记下来，免得每次都再问一遍 Foreca（秒）。
- * notFound：城市不存在、这个城市没有这类数据（404）；forbidden：套餐不包含（401/403，换了密钥后最多 1 小时恢复）；
- * transient：限流、超时、服务器临时故障，只记在本机房。
+ * notFound：城市不存在、这个城市没有这类数据（404），全球共享；
+ * forbidden：密钥或套餐问题（401/403），只记本机房，期间照常用旧数据；
+ * transient：限流、超时、临时故障，只记本机房；没有旧数据可用时只等 transientNoData。
  */
-export const FAILURE_TTL = { notFound: 1 * DAY, forbidden: 1 * HOUR, transient: 2 * MINUTE } as const;
+export const FAILURE_TTL = { notFound: 1 * DAY, forbidden: 15 * MINUTE, transient: 2 * MINUTE, transientNoData: 20 } as const;
 
 /** 非必需数据（逐小时、15 天、空气质量、往年、降雨时间轴）最多等多久（毫秒），超时先出页面，下一次再补 */
 export const OPTIONAL_DATA_BUDGET_MS = 3000;
 
 /**
- * 提前刷新：数据快过期时，每个请求有一定概率提前去刷新，而不是所有机房在同一时刻一起过期、一起请求 Foreca。
- * 刷新前先查 KV，其他机房已经刷新过就直接用。窗口 = 有效期的 share，最长 maxSeconds；概率从 minChance 线性升到 maxChance。
+ * 错开刷新：各机房的数据同时过期，过期后每个机房按机房代码再等 0 到"新鲜期 × share（最多 maxSeconds）"不等的时间才刷新，
+ * 等待期间先看 KV 有没有别的机房刚取的。热门城市因此大多只请求一次 Foreca。代价是数据最多晚这么久更新。
  */
-export const EARLY_REFRESH = { share: 0.2, maxSeconds: 10 * MINUTE, minTtlSeconds: 5 * MINUTE, minChance: 0.02, maxChance: 0.2 } as const;
+export const REFRESH_STAGGER = { share: 0.25, maxSeconds: 5 * MINUTE } as const;
 
 /** 城市页面在 CDN 的缓存时长（秒）。 */
 export const PAGE_TTL = 5 * MINUTE;

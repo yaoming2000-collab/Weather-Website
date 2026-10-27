@@ -1,6 +1,6 @@
 import {
   DATA_TTL,
-  EARLY_REFRESH,
+  REFRESH_STAGGER,
   FAILURE_TTL,
   FORECAST_PERIODS,
   MAX_STALE_SECONDS,
@@ -51,9 +51,24 @@ export class WeatherService {
     private readonly store: CacheStore,
     private readonly now: () => number = () => Date.now(),
     private readonly log: (msg: string) => void = (msg) => console.warn(msg),
-    private readonly random: () => number = Math.random,
+    /** 本机房在"错开窗口"里的位置（0–1）。默认按机房代码算（setColo），拿到之前随机 */
+    private stagger: number = Math.random(),
     private readonly usage?: UsageRecorder,
   ) {}
+
+  /**
+   * 告诉数据模块自己在哪个 Cloudflare 机房（request.cf.colo，如 "HKG"）。
+   * 同一机房固定一个错开位置，不同机房分散开，见 cached() 里的说明。
+   */
+  setColo(colo: string | undefined): void {
+    if (!colo || this.colo === colo) return;
+    this.colo = colo;
+    let h = 2166136261;
+    for (const ch of colo) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    this.stagger = (h >>> 0) / 2 ** 32;
+  }
+
+  private colo: string | undefined;
 
   /** 调用统计攒够了时返回写入任务（由 app 在请求结束后放进 waitUntil），否则返回 null */
   usageFlush(): Promise<void> | null {
@@ -75,8 +90,11 @@ export class WeatherService {
 
   /**
    * 取缓存；过期就向供应商获取。
-   * - 快过期时按概率提前刷新（先看 KV 里有没有其他机房刚取的），把各机房的刷新时间错开；
-   * - 获取失败时：旧数据还在可用期内就用旧数据；同时记下失败，一段时间内不再重复请求；
+   * - 错开刷新：所有机房从 KV 拿到的是同一份数据，会在同一时刻过期。过期后每个机房再等一个固定的、
+   *   按机房代码错开的时间（最多有效期的 1/4、不超过 5 分钟）才去 Foreca 取；等待期间照常用手上的数据，
+   *   而且每次都会先读 KV（本机房副本已过期），排在前面的机房一旦取到新数据，后面的机房直接用。
+   *   这样同一城市在多个机房有访客时，大多只请求一次；只有一个机房的城市不会多请求。
+   * - 获取失败时：旧数据还在可用期内就用旧数据（城市不存在除外）；同时记下失败，一段时间内不再重复请求。
    * - freshUntil：数据自己的过期时刻（例如 15 天预报在当地午夜过期），和有效期取较早的。
    */
   async cached<T>(
@@ -91,32 +109,29 @@ export class WeatherService {
     const usable = (e: CacheEntry<T> | null): e is CacheEntry<T> =>
       !!e && now < this.freshUntilOf(e, ttlSeconds) + MAX_STALE_SECONDS * 1000;
 
-    if (existing && now < this.freshUntilOf(existing, ttlSeconds)) {
-      if (!this.refreshEarly(now, this.freshUntilOf(existing, ttlSeconds), ttlSeconds)) return ok(existing);
-      // 提前刷新：其他机房可能刚刷新过，先看 KV
-      const shared = await this.store.getShared<T>(key);
-      if (shared && shared.fetchedAt > existing.fetchedAt) {
-        await this.store.put(key, shared, 0, { localOnly: true });
-        return ok(shared);
-      }
-      try {
-        return ok(await this.refresh(key, ttlSeconds, fetcher, options.freshUntil));
-      } catch {
+    if (existing) {
+      const fresh = this.freshUntilOf(existing, ttlSeconds);
+      if (now < fresh) {
+        // 旧版本写入的数据没有 freshUntil，补上后存进本机房，免得每次都去读 KV
+        if (existing.freshUntil === undefined) {
+          await this.store.put(key, { ...existing, freshUntil: fresh }, 0, { localOnly: true }).catch(() => undefined);
+        }
         return ok(existing);
       }
+      if (now < fresh + this.staggerMs(fresh - existing.fetchedAt)) return ok(existing);
     }
 
     const failed = await this.store.get<FailureMark>(`${key}:fail`);
     if (failed && now < (failed.freshUntil ?? 0)) {
-      if (usable(existing) && !isAbsent(failed.value.status)) return ok(existing);
+      if (usable(existing) && failed.value.status !== 404) return ok(existing);
       throw new ProviderError(`recently failed: ${key}`, failed.value.status ?? undefined);
     }
 
     try {
       return ok(await this.refresh(key, ttlSeconds, fetcher, options.freshUntil));
     } catch (err) {
-      await this.rememberFailure(key, err);
-      if (usable(existing) && !isAbsent(statusOf(err))) {
+      await this.rememberFailure(key, err, usable(existing));
+      if (usable(existing) && statusOf(err) !== 404) {
         this.log(`[weather] using stale data for ${key}: ${(err as Error).message}`);
         return ok(existing);
       }
@@ -128,29 +143,27 @@ export class WeatherService {
     return e.freshUntil ?? e.fetchedAt + ttlSeconds * 1000;
   }
 
-  private refreshEarly(now: number, freshUntil: number, ttlSeconds: number): boolean {
-    if (ttlSeconds < EARLY_REFRESH.minTtlSeconds) return false;
-    const windowMs = Math.min(ttlSeconds * EARLY_REFRESH.share, EARLY_REFRESH.maxSeconds) * 1000;
-    const start = freshUntil - windowMs;
-    if (now < start) return false;
-    const progress = Math.min(1, (now - start) / windowMs);
-    const chance = EARLY_REFRESH.minChance + (EARLY_REFRESH.maxChance - EARLY_REFRESH.minChance) * progress;
-    return this.random() < chance;
+  /** 本机房过期后再等多久才刷新（毫秒）。lifetimeMs：这份数据的新鲜期长度 */
+  private staggerMs(lifetimeMs: number): number {
+    const windowMs = Math.min(Math.max(0, lifetimeMs) * REFRESH_STAGGER.share, REFRESH_STAGGER.maxSeconds * 1000);
+    return windowMs * this.stagger;
   }
 
   private refresh<T>(key: string, ttlSeconds: number, fetcher: () => Promise<T>, freshFn?: (fetchedAt: number) => number): Promise<CacheEntry<T>> {
     let pending = this.inflight.get(key) as Promise<CacheEntry<T>> | undefined;
     if (!pending) {
-      const [, , kind, cityId] = key.split(':');
+      // 只统计向天气供应商的请求（键以 v1:<供应商>: 开头），排行榜等数据库查询不算
+      const [, prov, kind, cityId] = key.split(':');
+      const track = prov === this.provider.name && kind ? kind : null;
       pending = (async () => {
         let value: T;
         try {
           value = await fetcher();
         } catch (err) {
-          this.usage?.record(kind ?? 'other', cityId ?? null, false);
+          if (track) this.usage?.record(track, cityId ?? null, false);
           throw err;
         }
-        this.usage?.record(kind ?? 'other', cityId ?? null, true);
+        if (track) this.usage?.record(track, cityId ?? null, true);
         const fetchedAt = this.now();
         const freshUntil = Math.min(fetchedAt + ttlSeconds * 1000, freshFn?.(fetchedAt) ?? Infinity);
         const entry: CacheEntry<T> = { value, fetchedAt, freshUntil };
@@ -163,14 +176,25 @@ export class WeatherService {
     return pending;
   }
 
-  private async rememberFailure(key: string, err: unknown): Promise<void> {
+  /**
+   * 记下失败，一段时间内不再问：
+   * - 404（城市不存在、这个城市没有这类数据）：1 天，写到全球；
+   * - 401/403（密钥或套餐问题）：15 分钟，只记本机房，期间照常用旧数据；
+   * - 其他（限流、超时、临时故障）：有旧数据可用时 2 分钟，没有时只等 20 秒（新城市不至于长时间打不开）。
+   */
+  private async rememberFailure(key: string, err: unknown, hasFallback: boolean): Promise<void> {
     const status = statusOf(err);
     const seconds =
-      status === 404 ? FAILURE_TTL.notFound : status === 401 || status === 403 ? FAILURE_TTL.forbidden : FAILURE_TTL.transient;
+      status === 404
+        ? FAILURE_TTL.notFound
+        : status === 401 || status === 403
+          ? FAILURE_TTL.forbidden
+          : hasFallback
+            ? FAILURE_TTL.transient
+            : FAILURE_TTL.transientNoData;
     const now = this.now();
     const mark: CacheEntry<FailureMark> = { value: { status }, fetchedAt: now, freshUntil: now + seconds * 1000 };
-    // 短暂故障只记本机房；"不存在"、"套餐不包含"写到全球，所有机房都不再问
-    await this.store.put(`${key}:fail`, mark, seconds, { localOnly: !isAbsent(status) }).catch(() => undefined);
+    await this.store.put(`${key}:fail`, mark, seconds, { localOnly: status !== 404 }).catch(() => undefined);
   }
 
   async nearestLocation(lat: number, lon: number): Promise<WeatherLocation> {
@@ -266,18 +290,22 @@ export class WeatherService {
    * 城市主页需要的全部数据。
    * 地点几乎总在缓存里（保存 30 天），取到时区后，其余数据同时请求；降雨时间轴要看实况和逐小时，最后取。
    * 非必需数据最多等 OPTIONAL_DATA_BUDGET_MS，失败或超时时该项为 null，页面照常显示其余部分。
+   * defer：请求的 waitUntil（超时没等到的请求在页面返回后继续完成）。
    * 当前天气失败（且没有旧数据）时抛出错误。
    * 列表数据都从"现在这一小时 / 今天"开始，页面不用再找当前位置。
    */
-  async cityBundle(id: string): Promise<CityBundle> {
+  async cityBundle(id: string, defer?: (p: Promise<unknown>) => void): Promise<CityBundle> {
     const location = await this.location(id);
     const now = this.now();
     const today = localDate(now, location.timezone);
     const missing: string[] = [];
     // 整页共用一个时限：前一轮用掉的时间，降雨时间轴那一轮就少等这么多（用真实时钟）；至少留 0.3 秒给缓存读取
     const deadline = Date.now() + OPTIONAL_DATA_BUDGET_MS;
-    const opt = <T>(what: string, p: Promise<Fetched<T>>) =>
-      this.optional(what, id, withBudget(p, Math.max(300, deadline - Date.now())), missing);
+    const opt = <T>(what: string, p: Promise<Fetched<T>>) => {
+      // 超过时限页面就不等了；把请求交给 waitUntil，让它在页面返回后也能完成并写进缓存（否则会被取消，白白计费）
+      defer?.(p.catch(() => undefined));
+      return this.optional(what, id, withBudget(p, Math.max(300, deadline - Date.now())), missing);
+    };
 
     const [current, hourly, daily, air, climate, climateMonthly] = await Promise.all([
       this.current(id),
@@ -382,7 +410,7 @@ function isAbsent(status: number | null): boolean {
   return status === 404 || status === 401 || status === 403;
 }
 
-/** 超过时限就先放弃（请求本身继续，完成后照样写进缓存，下一次就有了） */
+/** 超过时限就先放弃（请求本身由 defer 交给 waitUntil 继续，完成后照样写进缓存，下一次就有了） */
 function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {

@@ -6,7 +6,7 @@ import { ProviderError } from '../src/weather/provider';
 import { fromCurrentHour, searchLongEnough, shouldFetchNowcast, WeatherService } from '../src/weather/service';
 import type { CacheStore } from '../src/cache/store';
 
-function setup(startMs = Date.UTC(2026, 9, 22, 3, 0), opts: { random?: () => number } = {}) {
+function setup(startMs = Date.UTC(2026, 9, 22, 3, 0)) {
   let now = startMs;
   const clock = () => now;
   const provider = new MockProvider(clock);
@@ -31,8 +31,8 @@ function setup(startMs = Date.UTC(2026, 9, 22, 3, 0), opts: { random?: () => num
     },
   });
   const store = new MemoryStore(clock);
-  // 默认不提前刷新（random = 1），需要时由测试指定
-  const make = (st: CacheStore) => new WeatherService(counted, st, clock, () => undefined, opts.random ?? (() => 1));
+  // stagger：本"机房"过期后再等多久才刷新（0 = 一过期就刷新）
+  const make = (st: CacheStore, stagger = 0) => new WeatherService(counted, st, clock, () => undefined, stagger);
   const service = make(store);
   return {
     service,
@@ -179,16 +179,17 @@ describe('WeatherService caching', () => {
 });
 
 describe('two data centers sharing KV', () => {
-  function world(opts: { random?: () => number } = {}) {
-    const w = setup(Date.UTC(2026, 9, 22, 3, 0), opts);
+  function world() {
+    const w = setup(Date.UTC(2026, 9, 22, 3, 0));
     const kv = new MemoryStore(w.clock);
-    const a = w.make(new TieredStore(new MemoryStore(w.clock), kv, w.clock));
-    const b = w.make(new TieredStore(new MemoryStore(w.clock), kv, w.clock));
-    return { ...w, a, b, kv };
+    const dc = (stagger: number) => w.make(new TieredStore(new MemoryStore(w.clock), kv, w.clock), stagger);
+    return { ...w, dc, kv };
   }
 
   it('uses the copy another data center just fetched instead of calling Foreca again', async () => {
-    const { a, b, calls, advance } = world();
+    const { dc, calls, advance } = world();
+    const a = dc(0);
+    const b = dc(0);
     await a.current('102643743');
     advance(60);
     await b.current('102643743');
@@ -199,6 +200,39 @@ describe('two data centers sharing KV', () => {
     expect(calls.current).toBe(2);
     advance(90);
     await b.current('102643743');
+    expect(calls.current).toBe(2);
+  });
+
+  it('staggers refreshes so only the first data center calls Foreca', async () => {
+    const { dc, calls, advance } = world();
+    const early = dc(0);
+    const late = dc(0.9);
+    await early.current('102643743');
+    await late.current('102643743');
+    expect(calls.current).toBe(1);
+    // 刚过期：排后面的机房继续用手上的数据，不请求
+    advance(DATA_TTL.current + 1);
+    await late.current('102643743');
+    expect(calls.current).toBe(1);
+    // 排前面的机房去取
+    await early.current('102643743');
+    expect(calls.current).toBe(2);
+    // 轮到排后面的机房时，KV 里已经是新的，直接用
+    advance(5 * 60);
+    const r = await late.current('102643743');
+    expect(calls.current).toBe(2);
+    expect(r.fetchedAt).toBeGreaterThan(Date.UTC(2026, 9, 22, 3, 0));
+  });
+
+  it('a data center on its own refreshes once, a little after expiry', async () => {
+    const { dc, calls, advance } = world();
+    const only = dc(0.5);
+    await only.current('102643743');
+    advance(DATA_TTL.current + 60);
+    await only.current('102643743');
+    expect(calls.current).toBe(1);
+    advance(120);
+    await only.current('102643743');
     expect(calls.current).toBe(2);
   });
 
@@ -216,15 +250,46 @@ describe('two data centers sharing KV', () => {
     expect(await tiered.get('k')).not.toBeNull();
   });
 
-  it('refreshes early, and checks KV first so two data centers do not both call', async () => {
-    const { a, b, calls, advance } = world({ random: () => 0 });
-    await a.current('102643743');
-    await b.current('102643743');
-    // 进入提前刷新窗口：A 去刷新；B 随后也"中签"，但先看 KV，发现 A 已经取过
-    advance(DATA_TTL.current - 120);
-    await a.current('102643743');
-    expect(calls.current).toBe(2);
-    await b.current('102643743');
+  it('copies entries written by the old version (no freshUntil) into the local layer', async () => {
+    const { dc, kv, clock } = world();
+    const a = dc(0);
+    await kv.put('v1:mock:loc:102643743', { value: { id: '102643743', name: 'London', adminArea: null, country: null, timezone: 'Europe/London', lat: 0, lon: 0 }, fetchedAt: clock() }, 3600);
+    await a.location('102643743');
+    await kv.put('v1:mock:loc:102643743', { value: { id: 'changed', name: 'X', adminArea: null, country: null, timezone: 'UTC', lat: 0, lon: 0 }, fetchedAt: clock() }, 3600);
+    // 第二次读本机房（已补上 freshUntil），不再读 KV
+    expect((await a.location('102643743')).name).toBe('London');
+  });
+});
+
+describe('no repeated calls around midnight', () => {
+  it('fetches the 15-day forecast about once as local midnight passes', async () => {
+    // 伦敦 23:52（UTC+1）开始，每 10 秒一次，持续 15 分钟
+    const { service, calls, advance } = setup(Date.UTC(2026, 9, 22, 22, 52));
+    for (let i = 0; i < 90; i++) {
+      await service.daily('102643743', 'Europe/London');
+      advance(10);
+    }
+    expect(calls.daily).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('failures', () => {
+  it('keeps serving old data when Foreca rejects the key (401/403)', async () => {
+    const { service, advance, fail } = setup();
+    const first = await service.current('102643743');
+    advance(DATA_TTL.current + 60);
+    fail(401);
+    expect((await service.current('102643743')).fetchedAt).toBe(first.fetchedAt);
+    expect((await service.current('102643743')).fetchedAt).toBe(first.fetchedAt);
+  });
+
+  it('retries a new city soon after a temporary failure', async () => {
+    const { service, calls, advance, fail } = setup();
+    fail(503);
+    await expect(service.current('102643743')).rejects.toBeInstanceOf(ProviderError);
+    fail(false);
+    advance(FAILURE_TTL.transientNoData + 1);
+    await service.current('102643743');
     expect(calls.current).toBe(2);
   });
 });
@@ -278,12 +343,13 @@ describe('usage recording', () => {
   it('records each real provider call with its kind and city, but not cache hits', async () => {
     const seen: string[] = [];
     const provider = new MockProvider(() => Date.UTC(2026, 9, 22, 3, 0));
-    const svc = new WeatherService(provider, new MemoryStore(), () => Date.UTC(2026, 9, 22, 3, 0), () => undefined, () => 1, {
+    const svc = new WeatherService(provider, new MemoryStore(), () => Date.UTC(2026, 9, 22, 3, 0), () => undefined, 0, {
       record: (kind, city, ok) => seen.push(`${kind}|${city}|${ok}`),
     });
     await svc.current('102643743');
     await svc.current('102643743');
     await expect(svc.location('999999')).rejects.toBeInstanceOf(ProviderError);
+    await svc.cached('v1:ranking', 60, async () => 1);
     expect(seen).toEqual(['cur|102643743|true', 'loc|999999|false']);
   });
 });

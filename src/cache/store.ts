@@ -29,8 +29,6 @@ export interface PutOptions {
 
 export interface CacheStore {
   get<T>(key: string): Promise<CacheEntry<T> | null>;
-  /** 跳过本机房，直接读全球共享层（没有共享层时等同 get） */
-  getShared<T>(key: string): Promise<CacheEntry<T> | null>;
   /** keepSeconds：共享层保留多久（= 新鲜期 + 允许使用旧数据的时长）。本机房层只保留到 freshUntil。 */
   put<T>(key: string, entry: CacheEntry<T>, keepSeconds: number, options?: PutOptions): Promise<void>;
 }
@@ -48,10 +46,6 @@ export class MemoryStore implements CacheStore {
       return null;
     }
     return hit.entry as CacheEntry<T>;
-  }
-
-  getShared<T>(key: string): Promise<CacheEntry<T> | null> {
-    return this.get<T>(key);
   }
 
   async put<T>(key: string, entry: CacheEntry<T>, keepSeconds: number): Promise<void> {
@@ -74,10 +68,6 @@ export class KvStore implements CacheStore {
     }
   }
 
-  getShared<T>(key: string): Promise<CacheEntry<T> | null> {
-    return this.get<T>(key);
-  }
-
   async put<T>(key: string, entry: CacheEntry<T>, keepSeconds: number): Promise<void> {
     // KV 要求过期时间至少 60 秒
     await this.kv.put(key, JSON.stringify(entry), { expirationTtl: Math.max(60, Math.ceil(keepSeconds)) });
@@ -98,10 +88,6 @@ export class CacheApiStore implements CacheStore {
     } catch {
       return null;
     }
-  }
-
-  getShared<T>(key: string): Promise<CacheEntry<T> | null> {
-    return this.get<T>(key);
   }
 
   async put<T>(key: string, entry: CacheEntry<T>, keepSeconds: number): Promise<void> {
@@ -134,10 +120,6 @@ export class TieredStore implements CacheStore {
       return remote;
     }
     return hit;
-  }
-
-  getShared<T>(key: string): Promise<CacheEntry<T> | null> {
-    return this.shared.get<T>(key);
   }
 
   async put<T>(key: string, entry: CacheEntry<T>, keepSeconds: number, options: PutOptions = {}): Promise<void> {
