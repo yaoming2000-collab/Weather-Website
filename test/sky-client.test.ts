@@ -61,7 +61,10 @@ describe('sky particles', () => {
     const { precipIntensity } = await import('../src/pages/sky');
     expect(precipIntensity('rainy-drizzle')).toBe(1);
     expect(precipIntensity('night-rainy-moderate')).toBe(2);
-    expect(precipIntensity('stormy-rain-light')).toBe(3);
+    expect(precipIntensity('stormy-rain-light')).toBe(1);
+    expect(precipIntensity('stormy-rain-heavy')).toBe(3);
+    // 干雷：只闪光，不下雨
+    expect(precipIntensity('stormy-strong')).toBe(0);
     expect(precipIntensity('snowy-heavy')).toBe(3);
     expect(precipIntensity('sunny')).toBe(0);
 
@@ -73,5 +76,22 @@ describe('sky particles', () => {
     expect(a.match(/<i style="--x:/g)).toHaveLength(60);
     // 只用 transform 动画的粒子：内联样式里不能出现 background-position
     expect(a).not.toContain('background-position');
+  });
+});
+
+describe('every weather state has a sky', () => {
+  it('shows the right layers for tricky states', async () => {
+    const { SkyLayers } = await import('../src/pages/components');
+    const layers = async (icon: string, h = 12) => {
+      const html = String(await SkyLayers({ sky: computeSky({ ...base, icon, nowMs: at(h) }) }));
+      return ['stars', 'sun', 'moon', 'clouds', 'rain', 'snow', 'flash', 'fog'].filter((c) => html.includes(`class="${c}`));
+    };
+    expect(await layers('stormy-strong')).toEqual(['clouds', 'flash']); // 干雷不下雨
+    expect(await layers('sleet-light')).toEqual(['clouds', 'rain', 'snow']); // 雨夹雪
+    expect(await layers('cloudy')).toEqual(['clouds']); // 阴天看不到太阳
+    expect(await layers('mostly-cloudy')).toEqual(['sun', 'clouds']);
+    expect(await layers('night-cloudy', 22)).toEqual(['clouds']); // 阴天夜里没有星星
+    expect(await layers('night', 22)).toEqual(['stars', 'moon', 'clouds']);
+    expect(await layers('foggy')).toEqual(['fog']);
   });
 });

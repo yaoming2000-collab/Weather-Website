@@ -97,19 +97,19 @@ function rng(seed: string): () => number {
 const f = (n: number, d = 2) => n.toFixed(d);
 
 /** 雨滴：每一滴是一个独立元素，只用 transform 移动（显卡合成，不重绘，不抖） */
-function Rain(props: { seed: string; intensity: number }) {
+function Rain(props: { seed: string; intensity: number; fine?: boolean }) {
   const r = rng(`rain|${props.seed}`);
   const level = Math.max(1, props.intensity);
-  const count = [0, 36, 60, 90][level]!;
-  const speed = [0, 1.15, 0.85, 0.62][level]!;
+  const count = props.fine ? 44 : [0, 36, 60, 90][level]!;
+  const speed = props.fine ? 1.6 : [0, 1.15, 0.85, 0.62][level]!;
   const drops = Array.from({ length: count }, () => {
     const t = speed * (0.8 + r() * 0.45);
     return {
       x: r() * 112 - 2,
       t,
       d: -r() * t,
-      l: 10 + level * 4 + r() * 10,
-      o: 0.22 + level * 0.06 + r() * 0.22,
+      l: props.fine ? 5 + r() * 5 : 10 + level * 4 + r() * 10,
+      o: props.fine ? 0.18 + r() * 0.18 : 0.22 + level * 0.06 + r() * 0.22,
     };
   });
   return (
@@ -166,13 +166,13 @@ export function SkyLayers(props: { sky: Sky }) {
   const wet = w === 'rain' || w === 'storm';
   return (
     <div class="sky" aria-hidden="true" style={`--sx:${pos.x}%;--sy:${pos.y}%`}>
-      {night && (w === 'clear' || w === 'cloudy') ? <Stars seed={sky.seed} /> : null}
+      {night && w === 'clear' ? <Stars seed={sky.seed} /> : null}
       {sky.showDisc ? <div class={night ? 'moon' : 'sun'} /> : null}
       {w !== 'fog' ? <div class="clouds" /> : null}
       {w !== 'fog' ? <div class="clouds c2" /> : null}
-      {wet ? <Rain seed={sky.seed} intensity={sky.intensity} /> : null}
+      {(wet && sky.intensity > 0) || sky.sleet ? <Rain seed={sky.seed} intensity={sky.sleet ? Math.max(1, sky.intensity - 1) : sky.intensity} fine={sky.fine} /> : null}
       {w === 'storm' ? <div class="flash" /> : null}
-      {w === 'snow' ? <Snow seed={sky.seed} intensity={sky.intensity} /> : null}
+      {w === 'snow' ? <Snow seed={sky.seed} intensity={sky.sleet ? 1 : sky.intensity} /> : null}
       {w === 'fog' ? <div class="fog" /> : null}
       {w === 'fog' ? <div class="fog f2" /> : null}
     </div>
@@ -295,7 +295,7 @@ export function clientStrings(lang: Lang): Record<string, string> {
 }
 
 /** 没有城市数据的页面（我的城市、错误页）用的天空 */
-const DEFAULT_SKY: Sky = { phase: 'night', weather: 'cloudy', someClouds: false, arc: 0.5, showDisc: false, intensity: 0, seed: 'default', className: 'sky-night wx-cloudy' };
+const DEFAULT_SKY: Sky = { phase: 'night', weather: 'cloudy', someClouds: false, arc: 0.5, showDisc: false, intensity: 0, sleet: false, fine: false, seed: 'default', className: 'sky-night wx-cloudy' };
 
 const THEME: Record<string, string> = { day: '#2f6fd6', dawn: '#3e4c8c', golden: '#3c6cc4', dusk: '#1c295c', night: '#060d26' };
 
