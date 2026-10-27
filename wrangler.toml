@@ -3,6 +3,10 @@ name = "weather-itsfunmag"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
+# 先打包浏览器脚本（public/static/app.js）
+[build]
+command = "npm run build:client"
+
 # 静态文件（图标、法律页面、ads.txt 等）。存在的文件直接由 Cloudflare 返回，不经过 Worker。
 [assets]
 directory = "./public"
@@ -19,3 +23,20 @@ id = "REPLACE_WITH_KV_NAMESPACE_ID"
 WEATHER_PROVIDER = "foreca"
 
 # 密钥不要写在这里，用命令设置：wrangler secret put FORECA_TOKEN
+
+# ---------------------------------------------------------------------------
+# 测试环境（预览用）：npx wrangler deploy --env preview
+# 使用模拟数据，不需要 Foreca 密钥，也不需要创建 KV（数据缓存自动退回每个机房各自的缓存）。
+# 部署后的地址：https://weather-itsfunmag-preview.<你的账号子域名>.workers.dev
+# 详细步骤见 docs/deploy-preview.md
+# ---------------------------------------------------------------------------
+[env.preview]
+name = "weather-itsfunmag-preview"
+
+[env.preview.vars]
+WEATHER_PROVIDER = "mock"
+
+# 如需使用公司域名（itsfunmag.com 已托管在 Cloudflare 时），取消下面两行的注释：
+# [[env.preview.routes]]
+# pattern = "weather-next.itsfunmag.com"
+# custom_domain = true

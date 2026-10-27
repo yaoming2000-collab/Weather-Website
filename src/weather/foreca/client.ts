@@ -90,8 +90,10 @@ export class ForecaProvider implements WeatherProvider {
   async searchLocations(query: string, lang: string): Promise<WeatherLocation[]> {
     const q = query.trim();
     if (!q) return [];
+    // 我们的业务语言代码换成 Foreca 的：bp → pt，lm → es
+    const foreca = lang === 'bp' ? 'pt' : lang === 'lm' ? 'es' : lang;
     const raw = await this.get<RawLocationSearch>(`/api/v1/location/search/${encodeURIComponent(q)}`, {
-      lang: LOCATION_LANGS.has(lang) ? lang : 'en',
+      lang: LOCATION_LANGS.has(foreca) ? foreca : 'en',
     });
     return (raw.locations ?? []).flatMap((l) => {
       try {

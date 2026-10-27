@@ -4,7 +4,8 @@ import { PAGE_STALE_WHILE_REVALIDATE, PAGE_TTL } from './config/thresholds';
 import type { Env } from './env';
 import { fallbackCoords, parseCoords, parseLatLonPair, visitorCoords, type Coords } from './geo/visitor';
 import { isLang, resolveLanguage, type Lang } from './i18n/languages';
-import { CityPage, MessagePage } from './pages/cityPage';
+import { HomePage, type PageProps } from './pages/home';
+import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage } from './pages/subpages';
 import { citiesPath, cityPath, pageCacheKey, withNavParams } from './routing/urls';
 import { createWeatherService } from './weather';
 import { isNotFound, type WeatherService } from './weather/service';
@@ -15,6 +16,14 @@ type C = Context<AppEnv>;
 const LOCATION_ID = /^[0-9A-Za-z_-]{1,32}$/;
 /** 浏览器端缓存时长（秒）；CDN 端由 PAGE_TTL 控制 */
 const BROWSER_MAX_AGE = 60;
+
+/** 城市子页 */
+const SUBPAGES = {
+  hourly: HourlyPage,
+  '15day': DailyPage,
+  air: AirPage,
+} as const;
+type SubPage = keyof typeof SUBPAGES;
 
 export function createApp(options: { weather?: (env: Env) => WeatherService } = {}) {
   const app = new Hono<AppEnv>();
@@ -30,9 +39,9 @@ export function createApp(options: { weather?: (env: Env) => WeatherService } = 
     c.res.headers.set('X-Robots-Tag', 'noindex');
   });
 
-  // ---------- 接口 ----------
+  // ---------- 接口（给浏览器脚本用） ----------
 
-  /** 前端补刷新用：只返回当前天气 */
+  /** 前端补刷新：只返回当前天气 */
   app.get('/api/w/:id/now', async (c) => {
     const id = c.req.param('id');
     if (!LOCATION_ID.test(id)) return c.json({ error: 'bad id' }, 400);
@@ -45,7 +54,41 @@ export function createApp(options: { weather?: (env: Env) => WeatherService } = 
     }
   });
 
-  // ---------- 新网址 ----------
+  /** 城市搜索 */
+  app.get('/api/search', async (c) => {
+    const q = c.req.query('q') ?? '';
+    const lang = isLang(c.req.query('lang')) ? (c.req.query('lang') as Lang) : 'en';
+    try {
+      const items = await c.var.weather.search(q, lang);
+      c.header('Cache-Control', 'public, max-age=3600');
+      return c.json({ items: items.map((l) => ({ id: l.id, name: l.name, admin: l.adminArea, country: l.country })) });
+    } catch {
+      return c.json({ error: 'unavailable' }, 503);
+    }
+  });
+
+  /** 按坐标找最近的城市（迁移旧版"我的城市"时用） */
+  app.get('/api/near', async (c) => {
+    const coords = parseCoords(c.req.query('lat'), c.req.query('lon'));
+    if (!coords) return c.json({ error: 'bad coordinates' }, 400);
+    try {
+      const l = await c.var.weather.nearestLocation(coords.lat, coords.lon);
+      c.header('Cache-Control', 'public, max-age=86400');
+      return c.json({ id: l.id, name: l.name, admin: l.adminArea, country: l.country });
+    } catch {
+      return c.json({ error: 'unavailable' }, 503);
+    }
+  });
+
+  /** "我的城市"卡片，最多 10 个 */
+  app.get('/api/cities', async (c) => {
+    const ids = (c.req.query('ids') ?? '').split(',').map((s) => s.trim()).filter((s) => LOCATION_ID.test(s));
+    const cards = await c.var.weather.cityCards(ids);
+    c.header('Cache-Control', `public, max-age=${BROWSER_MAX_AGE}`);
+    return c.json({ items: cards });
+  });
+
+  // ---------- 页面 ----------
 
   app.get('/:channel/:lang/w/geo/:latlon', async (c) => {
     const target = parseTarget(c);
@@ -56,13 +99,17 @@ export function createApp(options: { weather?: (env: Env) => WeatherService } = 
   });
 
   app.get('/:channel/:lang/w/:id', (c) => cityPage(c));
+  app.get('/:channel/:lang/w/:id/:sub', (c) => {
+    const sub = c.req.param('sub');
+    return sub in SUBPAGES ? cityPage(c, sub as SubPage) : c.notFound();
+  });
 
-  app.get('/:channel/:lang/cities', (c) => {
+  app.get('/:channel/:lang/cities', async (c) => {
     const target = parseTarget(c);
     if (!target) return c.notFound();
-    return c.html(
-      <MessagePage lang={target.lang} title="My cities" message="Saved cities will be rebuilt in step 2 of the redesign." />,
-    );
+    const html = await (<CitiesPage channel={target.channel} lang={target.lang} providerName={c.var.weather.providerName} />).toString();
+    c.header('Cache-Control', 'public, max-age=300');
+    return c.html(`<!doctype html>${html}`);
   });
 
   // ---------- 旧网址兼容（需求文档"旧站兼容"） ----------
@@ -90,17 +137,11 @@ export function createApp(options: { weather?: (env: Env) => WeatherService } = 
   app.get('/:channel', channelHome);
   app.get('/:channel/', channelHome);
 
-  app.notFound((c) => {
-    const lang = langOf(c);
-    return c.html(<MessagePage lang={lang} title="Page not found" message="This page does not exist." />, 404);
-  });
+  app.notFound((c) => message(c, 404, 'NotFoundTitle', 'NotFoundText'));
 
   app.onError((err, c) => {
     console.error('[app] unhandled error', err);
-    return c.html(
-      <MessagePage lang={langOf(c)} title="Something went wrong" message="Please try again in a moment." />,
-      500,
-    );
+    return message(c, 500, 'ErrorTitle', 'ErrorText');
   });
 
   return app;
@@ -124,6 +165,15 @@ function parseTarget(c: C): { channel: Channel; lang: Lang } | null {
   return { channel, lang };
 }
 
+async function message(c: C, status: 404 | 500 | 503, titleKey: string, textKey: string) {
+  const lang = isLang(c.req.param('lang')) ? (c.req.param('lang') as Lang) : langOf(c);
+  const html = await (<MessagePage lang={lang} titleKey={titleKey} textKey={textKey} />).toString();
+  return new Response(`<!doctype html>${html}`, {
+    status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' },
+  });
+}
+
 /** 首页和旧网址：决定城市坐标后跳转到新的城市网址 */
 async function legacyHome(c: C, channel: Channel) {
   const q = query(c);
@@ -139,10 +189,7 @@ async function redirectToNearest(c: C, channel: Channel, lang: Lang, coords: Coo
     return c.redirect(withNavParams(cityPath(channel, lang, loc.id), query(c)), 302);
   } catch (err) {
     console.error('[home] cannot resolve location', err);
-    return c.html(
-      <MessagePage lang={lang} title="Weather unavailable" message="We could not load the weather right now. Please try again shortly." />,
-      503,
-    );
+    return message(c, 503, 'UnavailableTitle', 'UnavailableText');
   }
 }
 
@@ -159,8 +206,8 @@ function defaultCache(): Cache | undefined {
   return (globalThis as { caches?: { default?: Cache } }).caches?.default;
 }
 
-/** 城市主页：先查页面缓存；过期但仍在宽限期内时先返回旧页面、后台重新生成 */
-async function cityPage(c: C) {
+/** 城市页面：先查页面缓存；过期但仍在宽限期内时先返回旧页面、后台重新生成 */
+async function cityPage(c: C, sub?: SubPage) {
   const target = parseTarget(c);
   const id = c.req.param('id') ?? '';
   if (!target || !LOCATION_ID.test(id)) return c.notFound();
@@ -168,16 +215,14 @@ async function cityPage(c: C) {
   const url = new URL(c.req.url);
   const key = new Request(pageCacheKey(url));
   const cache = defaultCache();
+  const render = () => renderCity(c, target.channel, target.lang, id, sub);
 
   if (cache) {
     const hit = await cache.match(key);
     if (hit) {
       const age = Date.now() - Number(hit.headers.get('X-Rendered-At') ?? 0);
       if (age > PAGE_TTL * 1000) {
-        waitUntil(
-          c,
-          renderCity(c, target.channel, target.lang, id).then((r) => (r.status === 200 ? store(cache, key, r) : undefined)),
-        );
+        waitUntil(c, render().then((r) => (r.status === 200 ? store(cache, key, r) : undefined)));
       }
       const res = new Response(hit.body, hit);
       res.headers.set('Cache-Control', `public, max-age=${BROWSER_MAX_AGE}`);
@@ -186,7 +231,7 @@ async function cityPage(c: C) {
     }
   }
 
-  const res = await renderCity(c, target.channel, target.lang, id);
+  const res = await render();
   if (cache && res.status === 200) waitUntil(c, store(cache, key, res.clone()));
   res.headers.set('X-Page-Cache', 'MISS');
   return res;
@@ -198,12 +243,12 @@ async function store(cache: Cache, key: Request, res: Response) {
   await cache.put(key, copy);
 }
 
-async function renderCity(c: C, channel: Channel, lang: Lang, id: string): Promise<Response> {
+async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: SubPage): Promise<Response> {
   try {
     const bundle = await c.var.weather.cityBundle(id);
-    const html = await (
-      <CityPage bundle={bundle} channel={channel} lang={lang} providerName={c.var.weather.providerName} />
-    ).toString();
+    const props: PageProps = { bundle, channel, lang, providerName: c.var.weather.providerName };
+    const Page = sub ? SUBPAGES[sub] : HomePage;
+    const html = await (<Page {...props} />).toString();
     return new Response(`<!doctype html>${html}`, {
       status: 200,
       headers: {
@@ -214,16 +259,8 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string): Promi
       },
     });
   } catch (err) {
-    const notFound = isNotFound(err);
-    if (!notFound) console.error('[city] render failed', err);
-    const page = notFound ? (
-      <MessagePage lang={lang} title="City not found" message="We could not find this city." />
-    ) : (
-      <MessagePage lang={lang} title="Weather unavailable" message="We could not load the weather right now. Please try again shortly." />
-    );
-    return new Response(`<!doctype html>${await page.toString()}`, {
-      status: notFound ? 404 : 503,
-      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' },
-    });
+    if (isNotFound(err)) return message(c, 404, 'CityNotFoundTitle', 'CityNotFoundText');
+    console.error('[city] render failed', err);
+    return message(c, 503, 'UnavailableTitle', 'UnavailableText');
   }
 }

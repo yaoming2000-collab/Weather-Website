@@ -86,6 +86,41 @@ export class WeatherService {
     return (await this.cached(this.key('loc', id), DATA_TTL.location, () => this.provider.locationById(id))).data;
   }
 
+  /** 城市搜索。结果按"语言 + 关键字"缓存一天。 */
+  async search(query: string, lang: string): Promise<WeatherLocation[]> {
+    const q = query.trim().toLowerCase().slice(0, 60);
+    if (q.length < 2) return [];
+    const res = await this.cached(this.key('search', lang, q), SEARCH_TTL, () => this.provider.searchLocations(q, lang));
+    return res.data.slice(0, 10);
+  }
+
+  /** "我的城市"列表的卡片：城市、当前天气、今日最高最低。单个城市失败时跳过。 */
+  async cityCards(ids: string[]): Promise<CityCard[]> {
+    const unique = [...new Set(ids)].slice(0, 10);
+    const cards = await Promise.all(
+      unique.map(async (id): Promise<CityCard | null> => {
+        try {
+          const [location, current, daily] = await Promise.all([this.location(id), this.current(id), this.daily(id).catch(() => null)]);
+          const today = daily?.data.find((d) => d.date === localDate(this.now(), location.timezone)) ?? daily?.data[0];
+          return {
+            id,
+            name: location.name,
+            admin: location.adminArea,
+            country: location.country,
+            temperature: current.data.temperature,
+            icon: current.data.icon,
+            high: today?.maxTemp ?? null,
+            low: today?.minTemp ?? null,
+          };
+        } catch (err) {
+          this.log(`[weather] city card unavailable for ${id}: ${(err as Error).message}`);
+          return null;
+        }
+      }),
+    );
+    return cards.filter((c): c is CityCard => c !== null);
+  }
+
   current(id: string): Promise<Fetched<CurrentWeather>> {
     return this.cached(this.key('cur', id), DATA_TTL.current, () => this.provider.current(id));
   }
@@ -150,6 +185,19 @@ export class WeatherService {
       return null;
     };
   }
+}
+
+const SEARCH_TTL = 24 * 3600;
+
+export interface CityCard {
+  id: string;
+  name: string;
+  admin: string | null;
+  country: string | null;
+  temperature: number | null;
+  icon: string;
+  high: number | null;
+  low: number | null;
 }
 
 export interface CityBundle {
