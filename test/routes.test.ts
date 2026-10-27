@@ -98,6 +98,7 @@ describe('city page', () => {
     for (const slot of ['home_1', 'home_2', 'home_3']) expect(html).toContain(`data-slot="${slot}"`);
     expect(html).toMatch(/<script src="\/static\/app.js" defer/);
     expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
+    expect(res.headers.get('X-Page-TTL')).toBe('300');
   });
 
   it('shows a dash instead of 0 when a value is missing', async () => {
@@ -272,7 +273,11 @@ describe('step 3 pages', () => {
       },
     });
     const a = app(noClimate);
-    const home = await (await a.request(req('/wmi/en/w/102643743'))).text();
+    const homeRes = await a.request(req('/wmi/en/w/102643743'));
+    // 缺数据的页面只缓存 1 分钟，浏览器不缓存，尽快补全
+    expect(homeRes.headers.get('X-Page-TTL')).toBe('60');
+    expect(homeRes.headers.get('Cache-Control')).toBe('public, max-age=0');
+    const home = await homeRes.text();
     expect(home).not.toContain('class="vs"');
     const res = await a.request(req('/wmi/en/w/102643743/climate'));
     expect(res.status).toBe(200);
