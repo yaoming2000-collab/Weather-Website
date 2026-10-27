@@ -41,11 +41,28 @@ export class ForecaProvider implements WeatherProvider {
     private readonly token: string,
     private readonly fetchImpl: FetchLike = (input, init) => fetch(input, init),
     private readonly timeoutMs = 8000,
+    private readonly retryDelayMs = 400,
   ) {
     if (!token) throw new ProviderError('FORECA_TOKEN is not set');
   }
 
+  /**
+   * 请求一次；遇到限流（429）或临时故障（502/503/504）时，稍等再试一次。
+   * 每秒上限按套餐：Stratus 到 Altocumulus 10 次，Cirrus 50 次，Nimbus 500 次（business.foreca.com/weather-api/pricing，2026-10-27）；
+   * 试用和 Freemium 另有每天 2,000 次的上限。
+   * 一个新城市的页面会同时发出 7 个左右的请求，多个新城市同时打开时容易碰到每秒上限。
+   */
   private async get<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+    try {
+      return await this.getOnce<T>(path, params);
+    } catch (err) {
+      if (!(err instanceof ProviderError) || ![429, 502, 503, 504].includes(err.status ?? 0)) throw err;
+      await new Promise((r) => setTimeout(r, this.retryDelayMs + Math.random() * this.retryDelayMs));
+      return this.getOnce<T>(path, params);
+    }
+  }
+
+  private async getOnce<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
     const url = new URL(path, BASE_URL);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
 

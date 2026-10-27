@@ -106,6 +106,31 @@ describe('ForecaProvider', () => {
     await expect(p.current('999')).rejects.toMatchObject({ status: 404 });
   });
 
+  it('retries once when rate-limited or the server hiccups', async () => {
+    for (const status of [429, 503]) {
+      let n = 0;
+      const p = new ForecaProvider('secret', async (input, init) => {
+        n++;
+        if (n === 1) return new Response('slow down', { status });
+        return fakeFetch([])(input, init);
+      }, 8000, 1);
+      const nc = await p.nowcast('102643743');
+      expect(nc[0], String(status)).toMatchObject({ precipRate: 0.05 });
+      expect(n, String(status)).toBe(2);
+    }
+  });
+
+  it('does not retry other errors, and gives up after one retry', async () => {
+    let n = 0;
+    const p404 = new ForecaProvider('secret', async () => (n++, new Response('no', { status: 404 })), 8000, 1);
+    await expect(p404.current('1')).rejects.toMatchObject({ status: 404 });
+    expect(n).toBe(1);
+    n = 0;
+    const p429 = new ForecaProvider('secret', async () => (n++, new Response('no', { status: 429 })), 8000, 1);
+    await expect(p429.current('1')).rejects.toMatchObject({ status: 429 });
+    expect(n).toBe(2);
+  });
+
   it('turns network failures into ProviderError', async () => {
     const p = new ForecaProvider('secret', async () => {
       throw new Error('boom');

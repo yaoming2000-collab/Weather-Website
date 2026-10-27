@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { normalizeChannel, DEFAULT_CHANNEL, type Channel } from './config/channels';
-import { PAGE_STALE_WHILE_REVALIDATE, PAGE_TTL } from './config/thresholds';
+import { PAGE_STALE_WHILE_REVALIDATE, PAGE_TTL, PARTIAL_PAGE_TTL } from './config/thresholds';
 import type { Env } from './env';
 import { fallbackCoords, parseCoords, parseLatLonPair, visitorCoords, type Coords } from './geo/visitor';
 import { isLang, resolveLanguage, type Lang } from './i18n/languages';
@@ -288,12 +288,13 @@ async function cityPage(c: C, sub?: SubPage) {
     const hit = await cache.match(key);
     if (hit) {
       const age = Date.now() - Number(hit.headers.get('X-Rendered-At') ?? 0);
-      if (age > PAGE_TTL * 1000) {
+      const ttl = Number(hit.headers.get('X-Page-TTL') ?? PAGE_TTL);
+      if (age > ttl * 1000) {
         waitUntil(c, render().then((r) => (r.status === 200 ? store(cache, key, r) : undefined)));
       }
       const res = new Response(hit.body, hit);
       res.headers.set('Cache-Control', `public, max-age=${BROWSER_MAX_AGE}`);
-      res.headers.set('X-Page-Cache', age > PAGE_TTL * 1000 ? 'STALE' : 'HIT');
+      res.headers.set('X-Page-Cache', age > ttl * 1000 ? 'STALE' : 'HIT');
       return res;
     }
   }
@@ -306,7 +307,8 @@ async function cityPage(c: C, sub?: SubPage) {
 
 async function store(cache: Cache, key: Request, res: Response) {
   const copy = new Response(res.body, res);
-  copy.headers.set('Cache-Control', `public, max-age=${PAGE_TTL + PAGE_STALE_WHILE_REVALIDATE}`);
+  const ttl = Number(res.headers.get('X-Page-TTL') ?? PAGE_TTL);
+  copy.headers.set('Cache-Control', `public, max-age=${ttl + PAGE_STALE_WHILE_REVALIDATE}`);
   await cache.put(key, copy);
 }
 
@@ -326,11 +328,14 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
       const Page = sub ? SUBPAGES[sub as keyof typeof SUBPAGES] : HomePage;
       html = await (<Page {...props} />).toString();
     }
+    // 有非关键数据没取到（例如 Foreca 限流）时，页面只缓存 1 分钟，尽快补全；否则缺的部分会挂 5 分钟
+    const partial = !bundle.hourly || !bundle.daily || !bundle.air || !bundle.climate || !bundle.climateMonthly;
     return new Response(`<!doctype html>${html}`, {
       status: 200,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': `public, max-age=${BROWSER_MAX_AGE}`,
+        'Cache-Control': `public, max-age=${partial ? 0 : BROWSER_MAX_AGE}`,
+        'X-Page-TTL': String(partial ? PARTIAL_PAGE_TTL : PAGE_TTL),
         'X-Rendered-At': String(Date.now()),
         'X-Robots-Tag': 'noindex',
       },

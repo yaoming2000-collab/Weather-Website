@@ -50,6 +50,8 @@ export const MAX_STALE_SECONDS = 6 * HOUR;
 /** 城市页面在 CDN 的缓存时长（秒）。 */
 export const PAGE_TTL = 5 * MINUTE;
 export const PAGE_STALE_WHILE_REVALIDATE = 60;
+/** 页面有部分数据没取到时（例如供应商限流），只缓存这么久（秒），尽快补全 */
+export const PARTIAL_PAGE_TTL = 60;
 
 /** 访客位置拿不到时使用的默认位置（伦敦）。 */
 export const FALLBACK_COORDS = { lat: 51.5074, lon: -0.1278 } as const;
