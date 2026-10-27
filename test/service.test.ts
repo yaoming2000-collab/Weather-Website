@@ -91,6 +91,7 @@ describe('WeatherService caching', () => {
     const bundle = await service.cityBundle('104686017');
     expect(bundle.today).toBe('2026-10-21');
     expect(bundle.climate?.data.monthDay).toBe('10-21');
+    expect(bundle.climateMonthly?.data).toHaveLength(12);
   });
 
   it('still renders the page when non-essential data fails', async () => {

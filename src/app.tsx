@@ -7,10 +7,15 @@ import { isLang, resolveLanguage, type Lang } from './i18n/languages';
 import { HomePage, type PageProps } from './pages/home';
 import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage } from './pages/subpages';
 import { citiesPath, cityPath, pageCacheKey, withNavParams } from './routing/urls';
+import { RANKING } from './config/features';
+import { GUESS_CHOICES, type GuessChoice } from './features/climate';
+import { anomalyRecord, cityFeatures } from './features';
+import { createFeatureStore, totalVotes, type FeatureStore, type GuessCounts, type Ranking } from './features/store';
+import { localDate } from './time/cityTime';
 import { createWeatherService } from './weather';
 import { isNotFound, type WeatherService } from './weather/service';
 
-type AppEnv = { Bindings: Env; Variables: { weather: WeatherService } };
+type AppEnv = { Bindings: Env; Variables: { weather: WeatherService; features: FeatureStore } };
 type C = Context<AppEnv>;
 
 const LOCATION_ID = /^[0-9A-Za-z_-]{1,32}$/;
@@ -25,9 +30,13 @@ const SUBPAGES = {
 } as const;
 type SubPage = keyof typeof SUBPAGES;
 
-export function createApp(options: { weather?: (env: Env) => WeatherService } = {}) {
+export function createApp(
+  options: { weather?: (env: Env) => WeatherService; features?: (env: Env) => FeatureStore } = {},
+) {
   const app = new Hono<AppEnv>();
   const makeWeather = options.weather ?? createWeatherService;
+  const makeFeatures = options.features ?? ((env: Env) => createFeatureStore(env.DB));
+  let sharedFeatures: FeatureStore | undefined;
   // 同一个 Worker 实例共用一个数据模块，这样同一城市的并发请求只会向供应商请求一次
   let shared: WeatherService | undefined;
 
@@ -35,6 +44,8 @@ export function createApp(options: { weather?: (env: Env) => WeatherService } = 
   app.use('*', async (c, next) => {
     shared ??= makeWeather(c.env ?? {});
     c.set('weather', shared);
+    sharedFeatures ??= makeFeatures(c.env ?? {});
+    c.set('features', sharedFeatures);
     await next();
     c.res.headers.set('X-Robots-Tag', 'noindex');
   });
@@ -86,6 +97,40 @@ export function createApp(options: { weather?: (env: Env) => WeatherService } = 
     const cards = await c.var.weather.cityCards(ids);
     c.header('Cache-Control', `public, max-age=${BROWSER_MAX_AGE}`);
     return c.json({ items: cards });
+  });
+
+  /**
+   * 猜一猜（需求文档"今天比往年热还是冷"）。
+   * GET 读取当天计数（已经猜过的用户再次进入时用）；POST 投一票并返回最新计数。
+   * 每个浏览器每个城市每天只投一次，由浏览器 localStorage 控制。
+   * 正确答案在页面里，"X% 的人猜对了"由浏览器用计数算出。
+   */
+  app.get('/api/w/:id/guess', async (c) => {
+    const checked = await checkGuessTarget(c, c.req.query('date'));
+    if (checked instanceof Response) return checked;
+    const counts = await c.var.features.guessCounts(checked.id, checked.date);
+    c.header('Cache-Control', 'no-store');
+    return c.json(guessBody(checked.date, counts));
+  });
+
+  app.post('/api/w/:id/guess', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { date?: unknown; choice?: unknown } | null;
+    const choice = body?.choice;
+    if (typeof choice !== 'string' || !(GUESS_CHOICES as readonly string[]).includes(choice)) {
+      return c.json({ error: 'bad choice' }, 400);
+    }
+    const checked = await checkGuessTarget(c, typeof body?.date === 'string' ? body.date : undefined);
+    if (checked instanceof Response) return checked;
+    const counts = await c.var.features.addGuess(checked.id, checked.date, choice as GuessChoice);
+    c.header('Cache-Control', 'no-store');
+    return c.json(guessBody(checked.date, counts));
+  });
+
+  /** 今天全球最反常的城市（只用已访问城市的数据，每小时更新） */
+  app.get('/api/ranking', async (c) => {
+    const ranking = await loadRanking(c);
+    c.header('Cache-Control', 'public, max-age=600');
+    return c.json(ranking);
   });
 
   // ---------- 页面 ----------
@@ -246,6 +291,10 @@ async function store(cache: Cache, key: Request, res: Response) {
 async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: SubPage): Promise<Response> {
   try {
     const bundle = await c.var.weather.cityBundle(id);
+    // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
+    const now = c.var.weather.nowMs();
+    const record = anomalyRecord(bundle, cityFeatures(bundle, now).comparison, now);
+    if (record) waitUntil(c, c.var.features.recordAnomaly(record).catch((e) => console.warn('[ranking] record failed', e)));
     const props: PageProps = { bundle, channel, lang, providerName: c.var.weather.providerName };
     const Page = sub ? SUBPAGES[sub] : HomePage;
     const html = await (<Page {...props} />).toString();
@@ -263,4 +312,39 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
     console.error('[city] render failed', err);
     return message(c, 503, 'UnavailableTitle', 'UnavailableText');
   }
+}
+
+// ---------- 第 3 步接口的辅助函数 ----------
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 校验猜一猜的城市和日期。日期必须是城市当地的今天或昨天
+ * （页面缓存 5 分钟，跨过午夜时页面上还是昨天的日期），防止写入任意日期。
+ */
+async function checkGuessTarget(c: C, date: string | undefined): Promise<{ id: string; date: string } | Response> {
+  const id = c.req.param('id') ?? '';
+  if (!LOCATION_ID.test(id) || !date || !DATE.test(date)) return c.json({ error: 'bad request' }, 400);
+  try {
+    const loc = await c.var.weather.location(id);
+    const now = c.var.weather.nowMs();
+    const allowed = [localDate(now, loc.timezone), localDate(now - 86400_000, loc.timezone)];
+    if (!allowed.includes(date)) return c.json({ error: 'bad date' }, 400);
+    return { id, date };
+  } catch (err) {
+    return c.json({ error: isNotFound(err) ? 'not found' : 'unavailable' }, isNotFound(err) ? 404 : 503);
+  }
+}
+
+function guessBody(date: string, counts: GuessCounts) {
+  return { date, counts, total: totalVotes(counts) };
+}
+
+async function loadRanking(c: C): Promise<Ranking> {
+  const features = c.var.features;
+  const now = c.var.weather.nowMs();
+  // 没有数据库时（预览、测试）不缓存，否则同一实例里刚记录的城市要等一小时才出现
+  if (!features.persistent) return features.ranking(now);
+  const res = await c.var.weather.cached('v1:ranking', RANKING.cacheSeconds, () => features.ranking(now));
+  return res.data;
 }

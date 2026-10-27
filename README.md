@@ -8,8 +8,9 @@
 | 步骤 | 内容 | 状态 |
 | --- | --- | --- |
 | 1 | 骨架：渠道和语言路由、旧网址兼容、天气数据模块、两层缓存、页面缓存、时区逻辑、自动化测试 | ✅ PR #1 |
-| 2 | 首页和子页（逐小时、15 天、空气质量）的正式界面、°C/°F 换算、我的城市（含旧数据迁移）、城市搜索 | ✅ 本分支 |
-| 3 | 往年对比、降雨时间轴、生活指数、"预报准吗"投票 | 待开始 |
+| 2 | 首页和子页（逐小时、15 天、空气质量）的正式界面、°C/°F 换算、我的城市（含旧数据迁移）、城市搜索 | ✅ PR #2 |
+| 3a | 往年对比、猜一猜计数、排行榜、降雨时间轴、生活指数的**计算规则和接口**（不含界面） | ✅ 本分支 |
+| 3b | 上述功能的界面、"预报准吗"投票（等 UI 意见定稿后做） | 待开始 |
 | 4 | 27 种语言文案、城市名对照表、阿拉伯语和希伯来语排版 | 待开始 |
 | 5 | 广告瀑布流迁移、广告位、性能优化 | 待开始 |
 | 6 | 部署说明、验收 | 待开始 |
@@ -39,6 +40,8 @@ npm run typecheck                # 类型检查
 | `/{渠道}/{语言}/cities` | 我的城市和城市搜索 |
 | `/api/w/{城市ID}/now` | 当前天气 JSON，前端补刷新用 |
 | `/api/search?q=&lang=`、`/api/near?lat=&lon=`、`/api/cities?ids=` | 城市搜索、按坐标找城市、我的城市卡片 |
+| `GET /api/w/{城市ID}/guess?date=`、`POST /api/w/{城市ID}/guess` | 猜一猜：读取计数 / 投票（body：`{"date":"YYYY-MM-DD","choice":"colder\|same\|warmer"}`） |
+| `/api/ranking` | 今天全球最反常的城市（暖、冷各前 10） |
 
 渠道：`wmi`（默认）、`mi`、`wme`、`wchyin`、`wxiaomi`、`wsearch-mi`。语言：27 种，见 `src/i18n/languages.ts`。
 
@@ -65,6 +68,14 @@ src/
   i18n/t.ts, locales/   界面文案（27 种语言沿用旧站翻译；新增文案先写英文，第 4 步补齐）
   weather/derive.ts     等级、描述、颜色（AQI、紫外线、湿度等）
   pages/                页面（服务器生成 HTML）
+  config/features.ts    第 3 步功能的可调规则：往年对比分级、猜一猜、排行榜、降雨时间轴、生活指数阈值
+  features/
+    climate.ts          今天比往年热还是冷：偏差、分级、用词、15 天对比、降水对比、首页标签
+    nowcast.ts          降雨时间轴的结论（有雷达精确到分钟，无雷达只说小时）
+    life.ts             生活指数：跑步、晾衣、洗车、穿衣、防晒
+    store.ts            猜一猜计数和排行榜存储（D1；没有 D1 时用内存）
+    index.ts            从城市数据算出页面需要的全部功能数据
+migrations/             D1 建表语句
 client/                 浏览器脚本（Vite 打包为 public/static/app.js，约 9 KB）
 public/                 静态文件：图标、法律页面、ads.txt、robots.txt
 test/                   自动化测试
@@ -81,10 +92,22 @@ test/                   自动化测试
 ## 部署（第 6 步会补充完整说明）
 
 ```bash
-npx wrangler kv namespace create WEATHER_KV   # 把输出的 id 填进 wrangler.toml
+npx wrangler kv namespace create WEATHER_KV                     # 把输出的 id 填进 wrangler.toml
+npx wrangler d1 create weather-features                         # 把输出的 database_id 填进 wrangler.toml
+npx wrangler d1 migrations apply weather-features --remote      # 建表
 npx wrangler secret put FORECA_TOKEN
 npx wrangler deploy
 ```
+
+测试环境（`--env preview`）不需要 KV 和 D1，见 `docs/deploy-preview.md`。
+
+## 第 3 步的存储为什么用 D1
+
+- **猜一猜计数**：投票是"读出来加一再写回去"。KV 在多人同时投票时会丢票，同一个键每秒也只能写一次；
+  D1（Cloudflare 的 SQLite 数据库）一条 SQL 就能原子地加一。数据保留 7 天，每天的定时任务清理。
+- **排行榜**：每次生成城市页面时顺便记录这个城市今天的偏差（同一城市每小时最多写一次），
+  排行榜从这张表里取最近 24 小时的数据，结果缓存 1 小时。不额外调用 Foreca。
+- 用量：每个城市每小时最多写一次排行榜，每次投票写一次。Workers 付费套餐（每月 5 美元）含每月 5,000 万行写入，这点用量可以忽略。
 
 ## 待核实（Foreca 试用期内）
 

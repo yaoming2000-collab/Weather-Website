@@ -79,6 +79,8 @@ describe('ForecaProvider', () => {
     const hourly = await p.hourly('102643743', 24);
     expect(hourly).toHaveLength(1); // 没有时间的条目被丢弃
     expect(hourly[0]).toMatchObject({ icon: 'cloudy', precipProb: 44 });
+    // 默认数据集没有湿度和紫外线，必须要 full
+    expect(calls.at(-1)!.url.searchParams.get('dataset')).toBe('full');
 
     const daily = await p.daily('102643743', 15);
     expect(daily[0]).toMatchObject({ date: '2026-08-12', icon: 'rainy-light', maxTemp: 18.03, sunrise: '05:25:32' });
