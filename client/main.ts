@@ -460,6 +460,25 @@ function setupShare() {
   }
 }
 
+// ---------- 9. 天空动画：没人操作时暂停 ----------
+
+const SKY_IDLE_MS = 40_000;
+
+/** 40 秒没有触摸、滚动、按键就暂停背景动画（雨雪先淡出），有操作立即恢复。省电，便宜手机不发热。 */
+function setupSkyIdle() {
+  if (!document.querySelector('.sky')) return;
+  const root = document.documentElement;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const wake = () => {
+    root.classList.remove('sky-idle');
+    clearTimeout(timer);
+    timer = setTimeout(() => root.classList.add('sky-idle'), SKY_IDLE_MS);
+  };
+  for (const ev of ['pointerdown', 'touchstart', 'scroll', 'keydown', 'wheel']) addEventListener(ev, wake, { passive: true });
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && wake());
+  wake();
+}
+
 // ---------- 启动 ----------
 
 function init() {
@@ -488,6 +507,7 @@ function init() {
   setupGuess();
   setupVote();
   setupShare();
+  setupSkyIdle();
 
   void refreshCurrent();
   setInterval(applyTime, 60_000);

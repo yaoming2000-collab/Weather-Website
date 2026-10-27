@@ -4,14 +4,15 @@
  * 设计要点：
  * - 背景是"此刻这座城市的天空"：按当地时间（黎明、白天、金光、黄昏、夜晚）和天气（晴、云、雨、雷、雪、雾）变化，
  *   太阳和月亮按真实时间停在弧线上（见 src/pages/sky.ts）。这是页面唯一"抢眼"的地方，其余保持安静。
- * - 卡片是带天空色调的磨砂玻璃，标题用小号常规大小写，不用全大写。
+ * - 卡片是带天空色调的半透明底色，标题用小号常规大小写，不用全大写。
+ *   不用毛玻璃模糊（backdrop-filter）：背景一直在动，模糊每帧都要重算，限速模拟下滑动从 60 帧掉到 43 帧，便宜手机会卡、发热。
  * - 字体用系统字体：27 种语言（含阿拉伯文、泰文、印地文）都能正确显示，而且不用下载字体文件。
  * - 动画只用 CSS；系统开启"减少动态效果"时全部停止。
  */
 export const CSS = `
 :root{
   --fg:#fff;--mut:rgba(255,255,255,.78);--faint:rgba(255,255,255,.56);
-  --glass:rgba(16,42,96,.24);--glass-hi:rgba(255,255,255,.10);--line:rgba(255,255,255,.14);--chip:rgba(255,255,255,.16);
+  --glass:rgba(16,42,96,.30);--glass-hi:rgba(255,255,255,.10);--line:rgba(255,255,255,.14);--chip:rgba(255,255,255,.16);
   --rain:#9bd4ff;--link:#fff;
   --sky1:#2f6fd6;--sky2:#5d9ef0;--sky3:#a9d2fb;
   --r-lg:22px;--r-md:16px;--r-sm:12px;
@@ -30,7 +31,7 @@ bdi{unicode-bidi:isolate}
 .wrap{position:relative;z-index:1;max-width:560px;margin:0 auto;padding:max(10px,env(safe-area-inset-top)) 16px 40px}
 
 /* ---------- 天空：天色 ---------- */
-.sky-day{--sky1:#2f6fd6;--sky2:#5d9ef0;--sky3:#a9d2fb;--glass:rgba(18,58,140,.24)}
+.sky-day{--sky1:#2f6fd6;--sky2:#5d9ef0;--sky3:#a9d2fb;--glass:rgba(18,58,140,.30)}
 .sky-dawn{--sky1:#3e4c8c;--sky2:#9a7fb5;--sky3:#f3b48a;--glass:rgba(48,40,96,.26)}
 .sky-golden{--sky1:#3c6cc4;--sky2:#8ea7d9;--sky3:#f6c78a;--glass:rgba(30,52,120,.26)}
 .sky-dusk{--sky1:#1c295c;--sky2:#5f4a8a;--sky3:#d9826a;--glass:rgba(24,20,60,.30)}
@@ -141,12 +142,12 @@ body{--cl:255,255,255}
   background:linear-gradient(rgba(255,255,255,0),rgba(255,255,255,.22) 35%,rgba(255,255,255,.26) 50%,rgba(255,255,255,.22) 65%,rgba(255,255,255,0))}
 .fog.f2{top:55%;opacity:.75;animation-duration:100s;animation-direction:alternate-reverse}
 
-/* 有雨雪粒子时，卡片不用毛玻璃模糊：后面的粒子每帧都在动，模糊要跟着每帧重算，低端手机会卡；改用更不透明的底色 */
+/* 有雨雪粒子时，卡片底色更不透明，雨雪不会干扰文字 */
 .wx-rain,.wx-storm{--glass-wet:rgba(34,44,64,.72)}
 .wx-snow{--glass-wet:rgba(44,62,96,.66)}
 .sky-night.wx-rain,.sky-night.wx-storm,.sky-night.wx-snow{--glass-wet:rgba(12,18,32,.74)}
-:is(.wx-rain,.wx-storm,.wx-snow) :is(.card,.tile){-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--glass-wet)}
-:is(.wx-rain,.wx-storm,.wx-snow) :is(.btn,.jump a:not([aria-current]),.vs,.search input){-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(255,255,255,.2)}
+:is(.wx-rain,.wx-storm,.wx-snow) :is(.card,.tile){background:var(--glass-wet)}
+:is(.wx-rain,.wx-storm,.wx-snow) :is(.btn,.jump a:not([aria-current]),.vs,.search input){background:rgba(255,255,255,.2)}
 
 /* 顶部压暗一点，保证城市名在亮的天空上也看得清 */
 .sky::after{content:"";position:absolute;inset:0 0 auto;height:150px;background:linear-gradient(rgba(0,0,0,.14),transparent)}
@@ -154,6 +155,10 @@ body{--cl:255,255,255}
 @keyframes twinkle{from{opacity:var(--o)}to{opacity:.15}}
 @keyframes drift{to{transform:translate3d(-10%,0,0)}}
 @keyframes flash{0%,93%,100%{opacity:0}94.5%{opacity:1}97%{opacity:0}}
+/* 40 秒没有操作：雨雪沙尘淡出，所有天空动画暂停，省电、不发热；一碰屏幕就恢复（client/main.ts） */
+.sky .rain,.sky .snow,.sky .dust,.sky .gusts{transition:opacity 1.5s}
+.sky-idle .sky .rain,.sky-idle .sky .snow,.sky-idle .sky .dust,.sky-idle .sky .gusts{opacity:0}
+.sky-idle .sky *,.sky-idle .sky *::after{animation-play-state:paused!important}
 @media (prefers-reduced-motion:reduce){
   .sky *,.sky *::after{animation:none!important}
   .rain,.snow,.dust,.gusts{display:none}
@@ -167,7 +172,7 @@ body{--cl:255,255,255}
 .place h1 svg{flex:none;width:18px;height:18px;opacity:.9}
 .region{margin-top:1px;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btn{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:40px;height:40px;padding:0 11px;border-radius:999px;border:0;
-  background:var(--chip);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
+  background:var(--chip);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
 .btn:active{background:rgba(255,255,255,.28)}
 .btn svg{width:20px;height:20px}
 .btn[aria-pressed="true"] svg{fill:#ffd36b;stroke:#ffd36b}
@@ -179,7 +184,7 @@ body{--cl:255,255,255}
 .jump{display:flex;gap:8px;margin:6px -16px 0;padding:2px 16px;overflow-x:auto;scrollbar-width:none}
 .jump::-webkit-scrollbar{display:none}
 .jump a{flex:none;display:flex;align-items:center;gap:8px;height:40px;padding:0 12px 0 14px;border-radius:999px;background:var(--chip);
-  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);font-size:14px;white-space:nowrap}
+  font-size:14px;white-space:nowrap}
 .jump a:active{background:rgba(255,255,255,.28)}
 .jump img{width:24px;height:24px}
 .jump .hl{color:var(--mut);font-variant-numeric:tabular-nums}
@@ -197,13 +202,13 @@ body{--cl:255,255,255}
 .feels{margin:2px 0 0;font-size:14px;color:var(--faint)}
 .upd{margin:10px 0 0;font-size:12px;color:var(--faint)}
 .vs{display:inline-flex;align-items:center;gap:8px;margin-top:14px;padding:7px 12px 7px 10px;border-radius:999px;font-size:14px;font-weight:550;text-shadow:none;
-  background:rgba(255,255,255,.16);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+  background:rgba(255,255,255,.16)}
 .vs i{width:10px;height:10px;border-radius:50%;background:var(--lv);box-shadow:0 0 0 3px color-mix(in srgb,var(--lv) 35%,transparent)}
 .vs svg{width:14px;height:14px;opacity:.75}
 
 /* ---------- 卡片 ---------- */
 .card{display:block;margin:12px 0;padding:14px 16px 16px;border-radius:var(--r-lg);background:var(--glass);
-  box-shadow:inset 0 1px 0 var(--glass-hi);-webkit-backdrop-filter:blur(22px) saturate(140%);backdrop-filter:blur(22px) saturate(140%)}
+  box-shadow:inset 0 1px 0 var(--glass-hi)}
 .sec{display:flex;align-items:center;gap:7px;margin:0 0 10px;font-size:13px;font-weight:600;color:var(--mut)}
 .sec svg{width:15px;height:15px;opacity:.85}
 .sec .go{margin-inline-start:auto;display:inline-flex;align-items:center;gap:2px;font-weight:500;color:var(--fg);opacity:.92}
@@ -272,7 +277,7 @@ a.card,.tile{transition:transform .15s var(--ease)}
 /* 详情方块 */
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
 .tile{display:flex;flex-direction:column;min-height:150px;padding:13px 15px 14px;border-radius:var(--r-lg);background:var(--glass);
-  box-shadow:inset 0 1px 0 var(--glass-hi);-webkit-backdrop-filter:blur(22px) saturate(140%);backdrop-filter:blur(22px) saturate(140%)}
+  box-shadow:inset 0 1px 0 var(--glass-hi)}
 .tile .sec{margin-bottom:8px}
 .tile .big{font-size:32px;font-weight:400;line-height:1.1;letter-spacing:-.01em}
 .tile .big small{font-size:16px;font-weight:500;margin-inline-start:2px}
@@ -414,7 +419,7 @@ details.dd .more b{color:var(--fg);font-weight:600}
 
 /* 我的城市 */
 .search{display:flex;gap:8px;margin:8px 0}
-.search input{flex:1;height:46px;padding:0 16px;border:0;border-radius:14px;background:rgba(255,255,255,.16);color:var(--fg);font:inherit;font-size:16px;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.search input{flex:1;height:46px;padding:0 16px;border:0;border-radius:14px;background:rgba(255,255,255,.16);color:var(--fg);font:inherit;font-size:16px}
 .search input::placeholder{color:var(--faint)}
 .city{display:flex;align-items:center;gap:4px;border-top:1px solid var(--line)}
 .city:first-child{border-top:0}
