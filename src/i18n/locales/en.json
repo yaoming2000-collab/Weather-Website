@@ -296,5 +296,7 @@
   "LifeNoGoodTime": "No good time in the next 12 hours",
   "LifeRainWeek": "Rain in the next 7 days",
   "LifeWhy": "What we looked at",
-  "LifeMore": "More activities"
+  "LifeMore": "More activities",
+  "Cond_dusty": "Dust",
+  "Cond_sandy": "Heavy dust"
 }

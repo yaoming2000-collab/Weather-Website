@@ -95,3 +95,35 @@ describe('every weather state has a sky', () => {
     expect(await layers('foggy')).toEqual(['fog']);
   });
 });
+
+describe('dust and wind', () => {
+  it('shows dust from coarse particles when it is dry, and lets rain win', async () => {
+    const { dustLevel, displayIcon } = await import('../src/pages/sky');
+    expect(dustLevel('sunny', { pm10: 561, pm25: 98 })).toBe(2);
+    expect(dustLevel('partly-cloudy', { pm10: 230, pm25: 80 })).toBe(1);
+    expect(dustLevel('sunny', { pm10: 120, pm25: 40 })).toBe(0);
+    // PM2.5 更高：是烟雾或污染，不是沙尘
+    expect(dustLevel('sunny', { pm10: 260, pm25: 300 })).toBe(0);
+    expect(dustLevel('rainy-light', { pm10: 561, pm25: 98 })).toBe(0);
+    const sky = computeSky({ ...base, icon: 'sunny', nowMs: at(12), air: { pm10: 561, pm25: 98 } });
+    expect(sky.className).toBe('sky-day wx-dust wx-dust2');
+    expect(displayIcon('sunny', sky)).toBe('sandy');
+  });
+
+  it('turns wind into cloud speed, rain slant and direction', async () => {
+    const { windLevel, windSign, skyVars } = await import('../src/pages/sky');
+    expect(windLevel(3, 5)).toBe(0);
+    expect(windLevel(7, null)).toBe(1);
+    expect(windLevel(8, 17)).toBe(2); // 阵风 17 m/s × 0.7 ≈ 12
+    expect(windLevel(20, 30)).toBe(3);
+    expect(windSign(270)).toBe(1); // 西风：往右（东）吹
+    expect(windSign(90)).toBe(-1); // 东风：往左吹
+    expect(windSign(0)).toBe(-1); // 北风：默认向左
+    const calm = skyVars(computeSky({ ...base, icon: 'rainy-light', nowMs: at(12), wind: { speed: 2, gust: 3, dir: 90 } }));
+    const gale = skyVars(computeSky({ ...base, icon: 'rainy-light', nowMs: at(12), wind: { speed: 18, gust: 25, dir: 270 } }));
+    expect(calm).toContain('--rot:12deg');
+    expect(calm).toContain('--drift:120s');
+    expect(gale).toContain('--rot:-34deg');
+    expect(gale).toContain('--drift:26s');
+  });
+});

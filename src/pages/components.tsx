@@ -7,7 +7,7 @@ import { citiesPath, cityPath } from '../routing/urls';
 import { iconImage } from '../weather/icons';
 import type { WeatherLocation } from '../weather/types';
 import { G } from './glyphs';
-import { discPosition, type Sky } from './sky';
+import { discPosition, skyVars, type Sky } from './sky';
 import { CSS } from './styles';
 
 export const DASH = '—';
@@ -157,7 +157,42 @@ function Stars(props: { seed: string }) {
   );
 }
 
-/** 天空图层：渐变底色、太阳或月光、星星、云、雨、雪、闪电、雾（见 sky.ts） */
+/** 沙尘：细小的颗粒顺着风向横穿屏幕 */
+function Dust(props: { seed: string; level: number; wind: number }) {
+  const r = rng(`dust|${props.seed}`);
+  const count = props.level === 2 ? 90 : 55;
+  const base = [13, 10, 7, 5][props.wind]!;
+  const grains = Array.from({ length: count }, () => {
+    const t = base * (0.7 + r() * 0.7);
+    return { y: r() * 100, t, d: -r() * t, s: 1 + r() * 1.8, o: 0.25 + r() * 0.45 };
+  });
+  return (
+    <div class="dust">
+      {grains.map((g) => (
+        <i style={`--y:${f(g.y, 1)}%;--t:${f(g.t)}s;--d:${f(g.d)}s;--s:${f(g.s, 1)}px;--o:${f(g.o)}`} />
+      ))}
+    </div>
+  );
+}
+
+/** 风的线条：大风且没有雨雪沙尘时，几条很淡的细线快速掠过 */
+function Gusts(props: { seed: string; wind: number }) {
+  const r = rng(`gust|${props.seed}`);
+  const count = props.wind >= 3 ? 16 : 10;
+  const lines = Array.from({ length: count }, () => {
+    const t = 1.4 + r() * 1.6 - props.wind * 0.2;
+    return { y: 6 + r() * 62, t, d: -r() * 6, w: 50 + r() * 110, o: 0.18 + r() * 0.2 };
+  });
+  return (
+    <div class="gusts">
+      {lines.map((l) => (
+        <i style={`--y:${f(l.y, 1)}%;--t:${f(l.t)}s;--d:${f(l.d)}s;--w:${f(l.w, 0)}px;--o:${f(l.o)}`} />
+      ))}
+    </div>
+  );
+}
+
+/** 天空图层：渐变底色、太阳或月光、星星、云、雨、雪、沙尘、风、闪电、雾（见 sky.ts） */
 export function SkyLayers(props: { sky: Sky }) {
   const { sky } = props;
   const pos = discPosition(sky.arc);
@@ -165,11 +200,14 @@ export function SkyLayers(props: { sky: Sky }) {
   const w = sky.weather;
   const wet = w === 'rain' || w === 'storm';
   return (
-    <div class="sky" aria-hidden="true" style={`--sx:${pos.x}%;--sy:${pos.y}%`}>
+    <div class="sky" aria-hidden="true" style={`--sx:${pos.x}%;--sy:${pos.y}%;${skyVars(sky)}`}>
       {night && w === 'clear' ? <Stars seed={sky.seed} /> : null}
       {sky.showDisc ? <div class={night ? 'moon' : 'sun'} /> : null}
-      {w !== 'fog' ? <div class="clouds" /> : null}
-      {w !== 'fog' ? <div class="clouds c2" /> : null}
+      {w !== 'fog' && w !== 'dust' ? <div class="clouds" /> : null}
+      {w !== 'fog' && w !== 'dust' ? <div class="clouds c2" /> : null}
+      {w === 'dust' ? <div class="haze" /> : null}
+      {w === 'dust' ? <Dust seed={sky.seed} level={sky.dust} wind={sky.wind} /> : null}
+      {sky.wind >= 2 && (w === 'clear' || w === 'cloudy') ? <Gusts seed={sky.seed} wind={sky.wind} /> : null}
       {(wet && sky.intensity > 0) || sky.sleet ? <Rain seed={sky.seed} intensity={sky.sleet ? Math.max(1, sky.intensity - 1) : sky.intensity} fine={sky.fine} /> : null}
       {w === 'storm' ? <div class="flash" /> : null}
       {w === 'snow' ? <Snow seed={sky.seed} intensity={sky.sleet ? 1 : sky.intensity} /> : null}
@@ -295,7 +333,7 @@ export function clientStrings(lang: Lang): Record<string, string> {
 }
 
 /** 没有城市数据的页面（我的城市、错误页）用的天空 */
-const DEFAULT_SKY: Sky = { phase: 'night', weather: 'cloudy', someClouds: false, arc: 0.5, showDisc: false, intensity: 0, sleet: false, fine: false, seed: 'default', className: 'sky-night wx-cloudy' };
+const DEFAULT_SKY: Sky = { phase: 'night', weather: 'cloudy', someClouds: false, arc: 0.5, showDisc: false, intensity: 0, sleet: false, fine: false, wind: 0, windSign: -1, dust: 0, seed: 'default', className: 'sky-night wx-cloudy' };
 
 const THEME: Record<string, string> = { day: '#2f6fd6', dawn: '#3e4c8c', golden: '#3c6cc4', dusk: '#1c295c', night: '#060d26' };
 

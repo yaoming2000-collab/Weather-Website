@@ -87,11 +87,11 @@ bdi{unicode-bidi:isolate}
 body{--cl:255,255,255}
 .wx-rain,.wx-storm,.wx-snow{--cl:200,207,222}
 .sky-night{--cl:120,132,165}
-.clouds{left:-30%;width:160%;top:2%;height:50%;opacity:0;will-change:transform;animation:drift 120s ease-in-out infinite alternate;
+.clouds{left:-30%;width:160%;top:2%;height:50%;opacity:0;will-change:transform;animation:drift var(--drift,120s) ease-in-out infinite alternate;
   background:radial-gradient(70px 38px at 12% 30%,rgba(var(--cl),.75),transparent),radial-gradient(110px 52px at 18% 36%,rgba(var(--cl),.6),transparent),
     radial-gradient(80px 40px at 46% 18%,rgba(var(--cl),.7),transparent),radial-gradient(130px 58px at 54% 26%,rgba(var(--cl),.55),transparent),
     radial-gradient(90px 44px at 80% 40%,rgba(var(--cl),.7),transparent),radial-gradient(140px 62px at 88% 46%,rgba(var(--cl),.5),transparent)}
-.clouds.c2{top:22%;animation-duration:180s;animation-direction:alternate-reverse;transform:scale(1.4)}
+.clouds.c2{top:22%;animation-duration:calc(var(--drift,120s) * 1.5);animation-direction:alternate-reverse;transform:scale(1.4)}
 .wx-some .clouds{opacity:.6}.wx-some .clouds.c2{opacity:.35}
 .wx-cloudy .clouds{opacity:.8}.wx-cloudy .clouds.c2{opacity:.6}
 .wx-rain .clouds,.wx-storm .clouds,.wx-snow .clouds{opacity:.4}
@@ -100,9 +100,10 @@ body{--cl:255,255,255}
 .rain{inset:0}
 .rain i{position:absolute;top:0;left:var(--x);width:1.5px;height:var(--l);border-radius:1px;
   background:linear-gradient(rgba(225,236,255,0),rgba(225,236,255,var(--o)));
-  transform:translate3d(0,-20vh,0) rotate(12deg);will-change:transform;
+  transform:translate3d(0,-20vh,0) rotate(var(--rot,12deg));will-change:transform;
   animation:drop var(--t) linear var(--d) infinite}
-@keyframes drop{from{transform:translate3d(0,-20vh,0) rotate(12deg)}to{transform:translate3d(-26vh,112vh,0) rotate(12deg)}}
+/* 倾斜角度和横向距离随风变化（--rot、--dx 由 sky.ts 按风速、风向算出） */
+@keyframes drop{from{transform:translate3d(0,-20vh,0) rotate(var(--rot,12deg))}to{transform:translate3d(var(--dx,-28vh),112vh,0) rotate(var(--rot,12deg))}}
 
 /* 雪：外层下落，内层左右飘 */
 .snow{inset:0}
@@ -110,8 +111,27 @@ body{--cl:255,255,255}
   animation:fall var(--t) linear var(--d) infinite}
 .snow b{display:block;width:var(--s);height:var(--s);border-radius:50%;background:#fff;box-shadow:0 0 4px rgba(255,255,255,.8);
   animation:sway var(--w) ease-in-out infinite alternate}
-@keyframes fall{from{transform:translate3d(0,-6vh,0)}to{transform:translate3d(0,106vh,0)}}
+@keyframes fall{from{transform:translate3d(0,-6vh,0)}to{transform:translate3d(var(--sdx,0),106vh,0)}}
 @keyframes sway{from{transform:translateX(-12px)}to{transform:translateX(12px)}}
+
+/* 沙尘：昏黄的天色 + 一层雾霾 + 顺着风横穿的细颗粒 */
+.wx-dust.sky-day,.wx-dust.sky-twilight,.wx-dust.sky-dawn,.wx-dust.sky-golden,.wx-dust.sky-dusk{--sky1:#8c7656;--sky2:#b9935f;--sky3:#d8b37c;--glass:rgba(74,52,28,.32)}
+.wx-dust2.sky-day,.wx-dust2.sky-twilight,.wx-dust2.sky-dawn,.wx-dust2.sky-golden,.wx-dust2.sky-dusk{--sky1:#7a573a;--sky2:#a8794b;--sky3:#c99a63;--glass:rgba(64,40,20,.36)}
+.wx-dust.sky-night{--sky1:#211b14;--sky2:#382c1f;--sky3:#56432d}
+.wx-dust .sun{opacity:.55}.wx-dust .sun::after{display:none}
+.wx-dust .sun::before{background:radial-gradient(circle,rgba(255,236,200,.9) 0,rgba(255,214,160,.55) 5%,rgba(240,190,120,.2) 16%,transparent 50%)}
+.haze{inset:0;background:linear-gradient(rgba(214,176,120,.18),rgba(196,150,90,.32) 55%,rgba(180,130,70,.4));animation:breathe 12s ease-in-out infinite alternate}
+.dust{inset:0}
+.dust i{position:absolute;top:var(--y);left:0;width:var(--s);height:var(--s);border-radius:50%;background:rgba(246,222,180,var(--o));will-change:transform;
+  transform:translate3d(calc(var(--ws,-1) * -55vw + 50vw),0,0);animation:blow var(--t) linear var(--d) infinite}
+@keyframes blow{from{transform:translate3d(calc(50vw - var(--ws,-1) * 60vw),0,0)}to{transform:translate3d(calc(50vw + var(--ws,-1) * 60vw),3vh,0)}}
+
+/* 大风：几条很淡的细线快速掠过 */
+.gusts{inset:0}
+.gusts i{position:absolute;top:var(--y);left:0;width:var(--w);height:1px;border-radius:1px;opacity:0;will-change:transform,opacity;
+  background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,var(--o)),rgba(255,255,255,0));
+  animation:gust var(--t) ease-in-out var(--d) infinite}
+@keyframes gust{0%{opacity:0;transform:translate3d(calc(50vw - var(--ws,-1) * 65vw),0,0)}20%,70%{opacity:1}100%{opacity:0;transform:translate3d(calc(50vw + var(--ws,-1) * 65vw),0,0)}}
 
 /* 雷暴：每 11 秒一次柔和的亮光（不连续闪烁，避免刺眼） */
 .flash{inset:0;background:radial-gradient(ellipse at 60% 8%,rgba(220,225,255,.5),transparent 62%);opacity:0;animation:flash 11s ease-out infinite}
@@ -136,7 +156,7 @@ body{--cl:255,255,255}
 @keyframes flash{0%,93%,100%{opacity:0}94.5%{opacity:1}97%{opacity:0}}
 @media (prefers-reduced-motion:reduce){
   .sky *,.sky *::after{animation:none!important}
-  .rain,.snow{display:none}
+  .rain,.snow,.dust,.gusts{display:none}
 }
 
 /* ---------- 顶部 ---------- */

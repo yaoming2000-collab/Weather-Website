@@ -130,3 +130,20 @@ export const LIFE = {
   /** 防晒：看今天最大紫外线指数（WHO 分级）。< fairAtLeast 不需要，< poorAtLeast 建议，其余必须 */
   sunscreen: { fairAtLeast: 3, poorAtLeast: 6 },
 } as const;
+
+// ---------------------------------------------------------------------------
+// 背景天空：沙尘和大风（2026-10-27 加）
+// ---------------------------------------------------------------------------
+
+export const SKY = {
+  /**
+   * 沙尘：Foreca 的天气代码里没有沙尘，用空气质量判断。
+   * PM10 分指数 ≥ dustAtLeast、而且 PM10 比 PM2.5 高（粗颗粒为主，是沙尘而不是烟雾），且没有雨雪雾时，显示沙尘天空。
+   */
+  dustAtLeast: 200,
+  heavyDustAtLeast: 400,
+  /** 风（m/s，取风速和阵风 × 0.7 中较大的）：达到这些值时云飘得更快、雨更斜，并出现风的线条 */
+  breezyAtLeast: 6,
+  windyAtLeast: 10.8,
+  galeAtLeast: 17.2,
+} as const;

@@ -1,3 +1,4 @@
+import { SKY } from '../config/features';
 import { localParts } from '../time/cityTime';
 
 /**
@@ -11,7 +12,7 @@ import { localParts } from '../time/cityTime';
  */
 
 export type SkyPhase = 'dawn' | 'day' | 'golden' | 'dusk' | 'night';
-export type SkyWeather = 'clear' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog';
+export type SkyWeather = 'clear' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog' | 'dust';
 
 export interface Sky {
   phase: SkyPhase;
@@ -28,6 +29,12 @@ export interface Sky {
   sleet: boolean;
   /** 毛毛雨：雨滴更细、更短、更慢 */
   fine: boolean;
+  /** 风：0 平静，1 有风，2 大风，3 狂风 */
+  wind: 0 | 1 | 2 | 3;
+  /** 风把雨、雪、沙尘往哪边吹：1 向右，-1 向左（按真实风向的东西分量） */
+  windSign: 1 | -1;
+  /** 沙尘：0 无，1 有，2 严重 */
+  dust: 0 | 1 | 2;
   /** 粒子位置的随机种子（同一城市同一小时相同，页面缓存时保持一致） */
   seed: string;
   /** body 上的 class */
@@ -60,6 +67,10 @@ export function computeSky(input: {
   timezone: string;
   sunrise: string | null | undefined;
   sunset: string | null | undefined;
+  /** 风速、阵风（m/s）和风向（度，风从哪里来） */
+  wind?: { speed: number | null; gust: number | null; dir: number | null };
+  /** 现在的空气质量（PM10、PM2.5 分指数），用来判断沙尘 */
+  air?: { pm10: number | null; pm25: number | null } | null;
 }): Sky {
   const p = localParts(input.nowMs, input.timezone);
   const now = p.hour * 60 + p.minute;
@@ -86,11 +97,15 @@ export function computeSky(input: {
     arc = Math.min(1, Math.max(0, (now - rise) / Math.max(1, set - rise)));
   }
 
-  const { weather, someClouds } = skyWeather(input.icon);
+  const sw = skyWeather(input.icon);
+  const dust = dustLevel(input.icon, input.air);
+  const weather: SkyWeather = dust ? 'dust' : sw.weather;
+  const someClouds = dust ? false : sw.someClouds;
+  const wind = windLevel(input.wind?.speed ?? null, input.wind?.gust ?? null);
   const intensity = precipIntensity(input.icon);
   // 阴天（cloudy）看不到太阳；大部分多云（mostly-cloudy）白天还能透出一点太阳的光
   const base = input.icon.replace(/^night-/, '');
-  const showDisc = weather === 'clear' || (base === 'mostly-cloudy' && phase !== 'night');
+  const showDisc = weather === 'clear' || (base === 'mostly-cloudy' && phase !== 'night') || (weather === 'dust' && phase !== 'night');
   const tone = weather === 'clear' ? phase : phase === 'night' ? 'night' : phase === 'day' ? 'day' : 'twilight';
   return {
     phase,
@@ -101,8 +116,11 @@ export function computeSky(input: {
     intensity,
     sleet: isSleet(input.icon),
     fine: base === 'rainy-drizzle',
+    wind,
+    windSign: windSign(input.wind?.dir ?? null),
+    dust,
     seed: `${input.timezone}|${p.hour}|${input.icon}`,
-    className: `sky-${tone} wx-${weather}${someClouds ? ' wx-some' : ''}`,
+    className: `sky-${tone} wx-${weather}${someClouds ? ' wx-some' : ''}${dust === 2 ? ' wx-dust2' : ''}`,
   };
 }
 
@@ -117,6 +135,45 @@ export function precipIntensity(icon: string): 0 | 1 | 2 | 3 {
   if (key.endsWith('-moderate') || key === 'rainy-freezing') return 2;
   if (/^(rainy|snowy|sleet)/.test(key)) return 1;
   return 0;
+}
+
+/** 沙尘等级：只在没有雨雪雾时判断（下雨时空气里的沙尘会被冲掉，显示雨更准确） */
+export function dustLevel(icon: string, air: { pm10: number | null; pm25: number | null } | null | undefined): 0 | 1 | 2 {
+  if (!air || air.pm10 === null) return 0;
+  const w = skyWeather(icon).weather;
+  if (w !== 'clear' && w !== 'cloudy') return 0;
+  if (air.pm10 < SKY.dustAtLeast || (air.pm25 !== null && air.pm25 > air.pm10)) return 0;
+  return air.pm10 >= SKY.heavyDustAtLeast ? 2 : 1;
+}
+
+export function windLevel(speed: number | null, gust: number | null): 0 | 1 | 2 | 3 {
+  const v = Math.max(speed ?? 0, (gust ?? 0) * 0.7);
+  if (v >= SKY.galeAtLeast) return 3;
+  if (v >= SKY.windyAtLeast) return 2;
+  if (v >= SKY.breezyAtLeast) return 1;
+  return 0;
+}
+
+/** 风向是"风从哪里来"：西风（270°）把东西吹向右边（东），东风吹向左边；南北风默认向左 */
+export function windSign(dir: number | null): 1 | -1 {
+  if (dir === null) return -1;
+  const eastward = -Math.sin((dir * Math.PI) / 180);
+  return eastward > 0.25 ? 1 : -1;
+}
+
+/** 天空层的 CSS 变量：云飘的速度、雨的倾斜、雪和沙尘的横向漂移，都随风变化 */
+export function skyVars(sky: Sky): string {
+  const angle = [12, 18, 26, 34][sky.wind]!;
+  const dx = Math.tan((angle * Math.PI) / 180) * 132 * sky.windSign;
+  const snowDx = [0, 14, 32, 56][sky.wind]! * sky.windSign;
+  const drift = [120, 75, 42, 26][sky.wind]!;
+  return `--rot:${-sky.windSign * angle}deg;--dx:${dx.toFixed(1)}vh;--sdx:${snowDx}vh;--drift:${drift}s;--ws:${sky.windSign}`;
+}
+
+/** 沙尘时首页大图标和天气描述改为沙尘（Foreca 代码里没有沙尘，否则会显示"晴"） */
+export function displayIcon(icon: string, sky: Sky): string {
+  if (!sky.dust) return icon;
+  return sky.dust === 2 ? 'sandy' : 'dusty';
 }
 
 /** 雨夹雪：同时显示雨滴和雪花 */

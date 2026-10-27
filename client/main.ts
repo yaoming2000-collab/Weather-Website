@@ -152,12 +152,13 @@ async function refreshCurrent() {
     const temp = hero.querySelector<HTMLElement>('[data-current-temp] [data-c]');
     if (temp && body.current.temperature !== null) temp.dataset.c = String(body.current.temperature);
     const img = hero.querySelector<HTMLImageElement>('img[data-icon]');
-    if (img) {
+    // 沙尘天的图标和描述来自空气质量，接口返回的天气图标里没有沙尘，不覆盖
+    if (img && !document.body.classList.contains('wx-dust')) {
       img.src = `/img/weather/${iconImage(body.current.icon)}`;
       img.dataset.icon = body.current.icon;
     }
     const cond = hero.querySelector('[data-current-cond]');
-    if (cond) cond.textContent = s(`Cond_${body.current.icon === 'night' ? 'night' : body.current.icon.replace(/^night-/, '')}`);
+    if (cond && !document.body.classList.contains('wx-dust')) cond.textContent = s(`Cond_${body.current.icon === 'night' ? 'night' : body.current.icon.replace(/^night-/, '')}`);
     updated.dataset.fetched = String(body.fetchedAt);
     applyUnits(currentSystem(), hero);
     applyTime();

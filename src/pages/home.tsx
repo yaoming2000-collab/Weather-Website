@@ -6,7 +6,7 @@ import type { LifeIndexKey } from '../features/life';
 import { intlLocale, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { cityPath } from '../routing/urls';
-import { hourLabel, weekdayLabel } from '../time/cityTime';
+import { currentHourIndex, hourLabel, weekdayLabel } from '../time/cityTime';
 import {
   aqiLevel,
   aqiPercent,
@@ -25,7 +25,7 @@ import type { CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
 import { AdSlot, DASH, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
 import { G } from './glyphs';
-import { computeSky, type Sky } from './sky';
+import { computeSky, displayIcon, type Sky } from './sky';
 
 export interface PageProps {
   bundle: CityBundle;
@@ -53,12 +53,18 @@ export function cityPageData(p: PageProps): Record<string, unknown> {
 
 export function pageSky(p: PageProps): Sky {
   const today = p.bundle.daily?.data.find((d) => d.date === p.bundle.today);
+  const c = p.bundle.current.data;
+  const air = p.bundle.air?.data ?? [];
+  const i = currentHourIndex(air.map((a) => a.time), p.nowMs);
+  const aq = i === -1 ? null : air[i];
   return computeSky({
-    icon: p.bundle.current.data.icon,
+    icon: c.icon,
     nowMs: p.nowMs,
     timezone: p.bundle.location.timezone,
     sunrise: today?.sunrise,
     sunset: today?.sunset,
+    wind: { speed: c.windSpeed, gust: c.windGust, dir: c.windDir },
+    air: aq ? { pm10: aq.pm10, pm25: aq.pm25 } : null,
   });
 }
 
@@ -371,6 +377,7 @@ export function HomePage(p: PageProps) {
   const pKey = pressureKey(c.pressure);
   const sky = pageSky(p);
   const daylight = sky.phase !== 'night' ? sky.arc : null;
+  const heroIcon = displayIcon(c.icon, sky);
 
   return (
     <Layout
@@ -390,10 +397,10 @@ export function HomePage(p: PageProps) {
             {c.temperature === null ? DASH : <span data-c={String(c.temperature)}>{Math.round(c.temperature)}</span>}
           </span>
           <span class="deg">°</span>
-          <Icon icon={c.icon} size={62} eager alt="" />
+          <Icon icon={heroIcon} size={62} eager alt="" />
         </div>
         <p class="cond" data-current-cond>
-          {t(lang, conditionKey(c.icon))}
+          {t(lang, conditionKey(heroIcon))}
         </p>
         <p class="hl-line">
           {t(lang, 'HighShort')} <b><Temp c={today?.maxTemp} /></b>
