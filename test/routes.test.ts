@@ -274,14 +274,27 @@ describe('step 3 pages', () => {
     });
     const a = app(noClimate);
     const homeRes = await a.request(req('/wmi/en/w/102643743'));
-    // 缺数据的页面只缓存 1 分钟，浏览器不缓存，尽快补全
-    expect(homeRes.headers.get('X-Page-TTL')).toBe('60');
-    expect(homeRes.headers.get('Cache-Control')).toBe('public, max-age=0');
+    // 套餐不包含 / 城市没有往年数据是长期的，不算"缺数据"，页面照常缓存 5 分钟
+    expect(homeRes.headers.get('X-Page-TTL')).toBe('300');
     const home = await homeRes.text();
     expect(home).not.toContain('class="vs"');
     const res = await a.request(req('/wmi/en/w/102643743/climate'));
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("We don&#39;t have long-term averages");
+  });
+
+  it('caches a page for only a minute when data was missing for a temporary reason', async () => {
+    const flaky: WeatherProvider = new Proxy(new MockProvider(() => NOW), {
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver);
+        if (prop === 'airQuality') return () => Promise.reject(new ProviderError('rate limited', 429));
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const res = await app(flaky).request(req('/wmi/en/w/102643743'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Page-TTL')).toBe('60');
+    expect(res.headers.get('Cache-Control')).toBe('public, max-age=0');
   });
 
   it('renders the ranking page with cities visitors opened', async () => {

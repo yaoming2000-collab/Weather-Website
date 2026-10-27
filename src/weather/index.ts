@@ -14,12 +14,11 @@ export function createProvider(env: Env): WeatherProvider {
 }
 
 export function createStore(env: Env): CacheStore {
-  const layers: CacheStore[] = [];
   const cacheApi = (globalThis as { caches?: CacheStorage & { default?: Cache } }).caches?.default;
-  if (cacheApi) layers.push(new CacheApiStore(cacheApi));
-  if (env.WEATHER_KV) layers.push(new KvStore(env.WEATHER_KV));
-  if (layers.length === 0) layers.push(memory);
-  return layers.length === 1 ? layers[0]! : new TieredStore(layers);
+  const local = cacheApi ? new CacheApiStore(cacheApi) : null;
+  const shared = env.WEATHER_KV ? new KvStore(env.WEATHER_KV) : null;
+  if (local && shared) return new TieredStore(local, shared);
+  return local ?? shared ?? memory;
 }
 
 export function createWeatherService(env: Env): WeatherService {

@@ -1,6 +1,7 @@
 import type { Child } from 'hono/jsx';
 import type { Channel } from '../config/channels';
 import { CLIMATE_LEVEL_COLORS } from '../config/features';
+import { HOURS_SHOWN } from '../config/thresholds';
 import type { CityFeatures } from '../features';
 import type { LifeIndexKey } from '../features/life';
 import { intlLocale, type Lang } from '../i18n/languages';
@@ -422,7 +423,7 @@ export function HomePage(p: PageProps) {
 
       <a class="card" data-nav href={cityPath(channel, lang, loc.id, 'hourly')}>
         <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} more={t(lang, 'SeeHourlyDetails')} />
-        <HourlyStrip hours={hourly?.data ?? []} days={days} lang={lang} />
+        <HourlyStrip hours={(hourly?.data ?? []).slice(0, HOURS_SHOWN)} days={days} lang={lang} />
       </a>
 
       <AdSlot slot="home_1" height={100} lang={lang} />

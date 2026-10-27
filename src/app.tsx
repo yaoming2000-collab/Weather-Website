@@ -328,8 +328,9 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
       const Page = sub ? SUBPAGES[sub as keyof typeof SUBPAGES] : HomePage;
       html = await (<Page {...props} />).toString();
     }
-    // 有非关键数据没取到（例如 Foreca 限流）时，页面只缓存 1 分钟，尽快补全；否则缺的部分会挂 5 分钟
-    const partial = !bundle.hourly || !bundle.daily || !bundle.air || !bundle.climate || !bundle.climateMonthly;
+    // 有非关键数据因为临时原因没取到（例如 Foreca 限流、超时）时，页面只缓存 1 分钟，尽快补全；
+    // 城市本来就没有的数据（例如没有往年数据）不算缺，否则这类城市的页面会每分钟重做一次
+    const partial = bundle.missing.length > 0;
     return new Response(`<!doctype html>${html}`, {
       status: 200,
       headers: {
