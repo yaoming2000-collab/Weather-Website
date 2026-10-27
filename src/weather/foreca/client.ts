@@ -47,7 +47,9 @@ export class ForecaProvider implements WeatherProvider {
   }
 
   /**
-   * 请求一次；遇到限流（429，试用每秒 10 次、Cirrus 每秒 50 次）或临时故障（502/503/504）时，稍等再试一次。
+   * 请求一次；遇到限流（429）或临时故障（502/503/504）时，稍等再试一次。
+   * 每秒上限按套餐：Stratus 到 Altocumulus 10 次，Cirrus 50 次，Nimbus 500 次（business.foreca.com/weather-api/pricing，2026-10-27）；
+   * 试用和 Freemium 另有每天 2,000 次的上限。
    * 一个新城市的页面会同时发出 7 个左右的请求，多个新城市同时打开时容易碰到每秒上限。
    */
   private async get<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
