@@ -90,6 +90,14 @@ npm install
 npx wrangler deploy --env preview
 ```
 
+如果你本地改过 `wrangler.toml`（例如打开了公司域名、把 `WEATHER_PROVIDER` 改成 `foreca`），拉代码前先暂存，拉完再放回来：
+
+```bash
+git stash
+git pull
+git stash pop
+```
+
 测试网址不变，刷新页面就能看到最新版本。
 
 ---
