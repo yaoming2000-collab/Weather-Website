@@ -149,3 +149,41 @@ export function lifeIndices(input: LifeInput): LifeIndex[] {
 export function isLifeIndexKey(s: string | undefined): s is LifeIndexKey {
   return (LIFE_INDEX_KEYS as readonly string[]).includes(s ?? '');
 }
+
+/**
+ * 未来几个小时每小时的评级（生活指数详情页的时间条）：把每个小时当作"现在"重新计算。
+ * 只支持跑步、晾衣、防晒；洗车和穿衣看的是整天，不按小时。
+ */
+export function hourlyRatings(key: 'running' | 'laundry' | 'sunscreen', input: LifeInput, hours = 12): Array<{ time: string; rating: LifeRating }> {
+  const list = upcoming(input.hourly, input.nowMs, hours);
+  const all = input.hourly ?? [];
+  return list.map((h) => {
+    const at = Date.parse(h.time);
+    if (key === 'sunscreen') {
+      const uv = h.uvIndex ?? 0;
+      const rating: LifeRating = uv >= LIFE.sunscreen.poorAtLeast ? 'poor' : uv >= LIFE.sunscreen.fairAtLeast ? 'fair' : 'good';
+      return { time: h.time, rating };
+    }
+    const current: CurrentWeather = {
+      ...input.current,
+      time: h.time,
+      symbol: h.symbol,
+      icon: h.icon,
+      temperature: h.temperature,
+      feelsLike: h.feelsLike,
+      humidity: h.humidity ?? input.current.humidity,
+      windSpeed: h.windSpeed,
+      precipProb: h.precipProb,
+      precipRate: h.precipAccum,
+      uvIndex: h.uvIndex,
+    };
+    // 晾衣按小时看时不用整天的降水概率，否则一整天都会是同一个结论
+    const at1 = { ...input, current, hourly: all, nowMs: at, daily: key === 'laundry' ? undefined : input.daily };
+    return { time: h.time, rating: (key === 'running' ? runningIndex(at1) : laundryIndex(at1)).rating! };
+  });
+}
+
+/** 最适合的时间：第一个"适合"的小时；没有就返回 null */
+export function bestHour(ratings: Array<{ time: string; rating: LifeRating }>): string | null {
+  return ratings.find((r) => r.rating === 'good')?.time ?? null;
+}

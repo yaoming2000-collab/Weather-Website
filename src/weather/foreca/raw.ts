@@ -74,6 +74,18 @@ export interface RawDaily {
     uvIndex?: N;
     sunrise?: S;
     sunset?: S;
+    maxFeelsLikeTemp?: N;
+    minFeelsLikeTemp?: N;
+    maxRelHumidity?: N;
+    minRelHumidity?: N;
+    windDir?: N;
+    maxWindGust?: N;
+    cloudiness?: N;
+    sunhours?: N;
+    moonPhase?: N;
+    moonrise?: S;
+    moonset?: S;
+    snowAccum?: N;
   }>;
 }
 

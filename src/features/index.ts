@@ -1,4 +1,5 @@
 import type { CityBundle } from '../weather/service';
+import type { DailyPoint } from '../weather/types';
 import {
   climateLabel,
   climateSeries,
@@ -29,6 +30,8 @@ export interface CityFeatures {
   /** 降雨时间轴；晴天（没有请求逐 15 分钟数据）为 null */
   nowcast: NowcastSummary | null;
   life: LifeIndex[];
+  /** 每日预报，从城市当地的今天开始 */
+  days: DailyPoint[];
 }
 
 export function cityFeatures(bundle: CityBundle, nowMs: number): CityFeatures {
@@ -53,6 +56,7 @@ export function cityFeatures(bundle: CityBundle, nowMs: number): CityFeatures {
       air: bundle.air?.data,
       nowMs,
     }),
+    days: fromToday,
   };
 }
 

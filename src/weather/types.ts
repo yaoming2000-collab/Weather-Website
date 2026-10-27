@@ -72,6 +72,22 @@ export interface DailyPoint {
   /** 当地时间 "HH:MM:SS"；极昼极夜时为 null */
   sunrise: string | null;
   sunset: string | null;
+  // 以下为日详情页用的补充字段（Foreca dataset=full 提供；模拟数据也提供）
+  maxFeelsLike?: number | null;
+  minFeelsLike?: number | null;
+  maxHumidity?: number | null;
+  minHumidity?: number | null;
+  windDir?: number | null;
+  maxWindGust?: number | null;
+  cloudiness?: number | null;
+  /** 日照小时数 */
+  sunHours?: number | null;
+  /** 月相角度：0 新月，90 上弦，180 满月，270 下弦 */
+  moonPhase?: number | null;
+  moonrise?: string | null;
+  moonset?: string | null;
+  /** 降雪量（水当量 mm） */
+  snowAccum?: number | null;
 }
 
 /**

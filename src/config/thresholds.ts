@@ -19,10 +19,10 @@ export const ICON_THRESHOLDS = {
 } as const;
 
 /**
- * sleet-moderate 这张图目前画了闪电（设计待修）。
- * 设计修好后改成 true，中雨夹雪就会改用 sleet-moderate。
+ * sleet-moderate 这张图原来误画了闪电，2026-10-27 已修好（闪电换成三滴雨，和 4 片雪花一起：介于小、大雨夹雪之间）。
+ * 改回 false 时，中雨夹雪会改用 sleet-light。
  */
-export const SLEET_MODERATE_ICON_FIXED = false;
+export const SLEET_MODERATE_ICON_FIXED = true;
 
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;

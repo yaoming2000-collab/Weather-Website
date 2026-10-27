@@ -6,6 +6,8 @@ import { t } from '../i18n/t';
 import { citiesPath, cityPath } from '../routing/urls';
 import { iconImage } from '../weather/icons';
 import type { WeatherLocation } from '../weather/types';
+import { G } from './glyphs';
+import { discPosition, skyVars, type Sky } from './sky';
 import { CSS } from './styles';
 
 export const DASH = '—';
@@ -18,11 +20,12 @@ export const round = (n: number | null | undefined): string => (n === null || n 
  */
 export function Temp(props: { c: number | null | undefined; deg?: boolean }) {
   if (props.c === null || props.c === undefined) return <span>{DASH}</span>;
+  // bdi：阿拉伯语、希伯来语页面里保持"29°"的顺序，不被排成"°29"
   return (
-    <span>
+    <bdi dir="ltr">
       <span data-c={String(props.c)}>{Math.round(props.c)}</span>
       {props.deg === false ? '' : '°'}
-    </span>
+    </bdi>
   );
 }
 
@@ -30,7 +33,7 @@ export function Temp(props: { c: number | null | undefined; deg?: boolean }) {
 export function Speed(props: { ms: number | null | undefined }) {
   if (props.ms === null || props.ms === undefined) return <span>{DASH}</span>;
   return (
-    <bdi>
+    <bdi dir="ltr">
       <span data-ms={String(props.ms)}>{Math.round(props.ms * 3.6)}</span> <span data-speed-unit>km/h</span>
     </bdi>
   );
@@ -40,7 +43,7 @@ export function Speed(props: { ms: number | null | undefined }) {
 export function Precip(props: { mm: number | null | undefined }) {
   if (props.mm === null || props.mm === undefined) return <span>{DASH}</span>;
   return (
-    <bdi>
+    <bdi dir="ltr">
       <span data-mm={String(props.mm)}>{props.mm.toFixed(1)}</span> <span data-mm-unit>mm</span>
     </bdi>
   );
@@ -54,7 +57,9 @@ export function Icon(props: { icon: string; size?: number; cls?: string; eager?:
       alt={props.alt ?? ''}
       width={props.size ?? 32}
       height={props.size ?? 32}
-      loading={props.eager ? 'eager' : 'lazy'}
+      // 图标只有三十来张、反复使用，不做懒加载：首屏的明天/逐小时图标懒加载会晚一拍才出现
+      loading="eager"
+      fetchpriority={props.eager ? 'high' : undefined}
       decoding="async"
       data-icon={props.icon}
     />
@@ -63,7 +68,7 @@ export function Icon(props: { icon: string; size?: number; cls?: string; eager?:
 
 /**
  * 广告位占位。固定高度，避免广告加载前后页面跳动（需求文档"广告"）。
- * 第 5 步在这里接入 AnyMind → AdSense → Taboola 瀑布流；现在显示虚线框，方便确认位置。
+ * 广告代码由 Darren 接入（AnyMind → AdSense → Taboola）；预览环境显示虚线框，方便确认位置。
  */
 export function AdSlot(props: { slot: string; height?: number; lang: Lang; preview?: boolean }) {
   const h = props.height ?? 280;
@@ -77,68 +82,197 @@ export function AdSlot(props: { slot: string; height?: number; lang: Lang; previ
   );
 }
 
-/** 背景动画层 */
-export function Sky(props: { bg: string }) {
-  const b = props.bg;
-  const fx: string[] = [];
-  if (b.includes('rainy') || b.includes('stormy')) fx.push('fx-rain');
-  if (b.includes('snowy')) fx.push('fx-snow');
-  if (b === 'night' || b === 'night-cloudy') fx.push('fx-stars');
-  if (b.includes('foggy')) fx.push('fx-fog');
+/** 简单的确定性随机数：同一个种子每次得到同一串数字（页面被缓存，粒子位置必须稳定） */
+function rng(seed: string): () => number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+const f = (n: number, d = 2) => n.toFixed(d);
+
+/** 雨滴：每一滴是一个独立元素，只用 transform 移动（显卡合成，不重绘，不抖） */
+function Rain(props: { seed: string; intensity: number; fine?: boolean }) {
+  const r = rng(`rain|${props.seed}`);
+  const level = Math.max(1, props.intensity);
+  const count = props.fine ? 44 : [0, 36, 60, 90][level]!;
+  const speed = props.fine ? 1.6 : [0, 1.15, 0.85, 0.62][level]!;
+  const drops = Array.from({ length: count }, () => {
+    const t = speed * (0.8 + r() * 0.45);
+    return {
+      x: r() * 112 - 2,
+      t,
+      d: -r() * t,
+      l: props.fine ? 5 + r() * 5 : 10 + level * 4 + r() * 10,
+      o: props.fine ? 0.18 + r() * 0.18 : 0.22 + level * 0.06 + r() * 0.22,
+    };
+  });
   return (
-    <div class="sky" aria-hidden="true">
-      {fx.map((c) => (
-        <div class={c} />
+    <div class="rain">
+      {drops.map((d) => (
+        <i style={`--x:${f(d.x, 1)}%;--t:${f(d.t)}s;--d:${f(d.d)}s;--l:${f(d.l, 0)}px;--o:${f(d.o)}`} />
       ))}
     </div>
   );
 }
 
-const STAR = (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
-    <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" />
-  </svg>
-);
-const LIST = (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-    <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
-  </svg>
-);
+/** 雪花：外层负责下落，内层负责左右飘 */
+function Snow(props: { seed: string; intensity: number }) {
+  const r = rng(`snow|${props.seed}`);
+  const level = Math.max(1, props.intensity);
+  const count = [0, 30, 48, 72][level]!;
+  const flakes = Array.from({ length: count }, () => {
+    const t = 9 + r() * 9 - level;
+    return { x: r() * 100, t, d: -r() * t, s: 2 + r() * 3.5, o: 0.55 + r() * 0.45, w: 2.6 + r() * 2.4 };
+  });
+  return (
+    <div class="snow">
+      {flakes.map((k) => (
+        <i style={`--x:${f(k.x, 1)}%;--t:${f(k.t)}s;--d:${f(k.d)}s;--o:${f(k.o)}`}>
+          <b style={`--s:${f(k.s, 1)}px;--w:${f(k.w)}s`} />
+        </i>
+      ))}
+    </div>
+  );
+}
 
-/** 城市主页顶部：城市名、收藏、单位切换、城市列表 */
+/** 星星：随机分布在上半屏，约三分之一会缓慢闪烁 */
+function Stars(props: { seed: string }) {
+  const r = rng(`stars|${props.seed}`);
+  const stars = Array.from({ length: 64 }, () => ({ x: r() * 100, y: r() * 58, s: 1 + r() * 1.4, o: 0.35 + r() * 0.6, tw: r() < 0.33, d: -r() * 6 }));
+  return (
+    <div class="stars">
+      {stars.map((s) => (
+        <i
+          class={s.tw ? 'tw' : undefined}
+          style={`--x:${f(s.x, 1)}%;--y:${f(s.y, 1)}%;--s:${f(s.s, 1)}px;--o:${f(s.o)};--d:${f(s.d)}s`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** 沙尘：细小的颗粒顺着风向横穿屏幕 */
+function Dust(props: { seed: string; level: number; wind: number }) {
+  const r = rng(`dust|${props.seed}`);
+  const count = props.level === 2 ? 90 : 55;
+  const base = [13, 10, 7, 5][props.wind]!;
+  const grains = Array.from({ length: count }, () => {
+    const t = base * (0.7 + r() * 0.7);
+    return { y: r() * 100, t, d: -r() * t, s: 1 + r() * 1.8, o: 0.25 + r() * 0.45 };
+  });
+  return (
+    <div class="dust">
+      {grains.map((g) => (
+        <i style={`--y:${f(g.y, 1)}%;--t:${f(g.t)}s;--d:${f(g.d)}s;--s:${f(g.s, 1)}px;--o:${f(g.o)}`} />
+      ))}
+    </div>
+  );
+}
+
+/** 风的线条：大风且没有雨雪沙尘时，几条很淡的细线快速掠过 */
+function Gusts(props: { seed: string; wind: number }) {
+  const r = rng(`gust|${props.seed}`);
+  const count = props.wind >= 3 ? 16 : 10;
+  const lines = Array.from({ length: count }, () => {
+    const t = 1.4 + r() * 1.6 - props.wind * 0.2;
+    return { y: 6 + r() * 62, t, d: -r() * 6, w: 50 + r() * 110, o: 0.18 + r() * 0.2 };
+  });
+  return (
+    <div class="gusts">
+      {lines.map((l) => (
+        <i style={`--y:${f(l.y, 1)}%;--t:${f(l.t)}s;--d:${f(l.d)}s;--w:${f(l.w, 0)}px;--o:${f(l.o)}`} />
+      ))}
+    </div>
+  );
+}
+
+/** 天空图层：渐变底色、太阳或月光、星星、云、雨、雪、沙尘、风、闪电、雾（见 sky.ts） */
+export function SkyLayers(props: { sky: Sky }) {
+  const { sky } = props;
+  const pos = discPosition(sky.arc);
+  const night = sky.phase === 'night';
+  const w = sky.weather;
+  const wet = w === 'rain' || w === 'storm';
+  return (
+    <div class="sky" aria-hidden="true" style={`--sx:${pos.x}%;--sy:${pos.y}%;${skyVars(sky)}`}>
+      {night && w === 'clear' ? <Stars seed={sky.seed} /> : null}
+      {sky.showDisc ? <div class={night ? 'moon' : 'sun'} /> : null}
+      {w !== 'fog' && w !== 'dust' ? <div class="clouds" /> : null}
+      {w !== 'fog' && w !== 'dust' ? <div class="clouds c2" /> : null}
+      {w === 'dust' ? <div class="haze" /> : null}
+      {w === 'dust' ? <Dust seed={sky.seed} level={sky.dust} wind={sky.wind} /> : null}
+      {sky.wind >= 2 && (w === 'clear' || w === 'cloudy') ? <Gusts seed={sky.seed} wind={sky.wind} /> : null}
+      {(wet && sky.intensity > 0) || sky.sleet ? <Rain seed={sky.seed} intensity={sky.sleet ? Math.max(1, sky.intensity - 1) : sky.intensity} fine={sky.fine} /> : null}
+      {w === 'storm' ? <div class="flash" /> : null}
+      {w === 'snow' ? <Snow seed={sky.seed} intensity={sky.sleet ? 1 : sky.intensity} /> : null}
+      {w === 'fog' ? <div class="fog" /> : null}
+      {w === 'fog' ? <div class="fog f2" /> : null}
+    </div>
+  );
+}
+
+/** 卡片标题：小图标 + 标题，右侧可选"查看更多" */
+export function Sec(props: { icon: Child; title: string; more?: string; tag?: 'h2' | 'h3' }) {
+  const inner = (
+    <>
+      {props.icon}
+      <span>{props.title}</span>
+      {props.more ? (
+        <span class="go">
+          {props.more}
+          {G.chevron('flip')}
+        </span>
+      ) : null}
+    </>
+  );
+  return props.tag === 'h3' ? <h3 class="sec">{inner}</h3> : <h2 class="sec">{inner}</h2>;
+}
+
+/** 城市主页顶部：城市名、单位切换、收藏、城市列表 */
 export function TopBar(props: { location: WeatherLocation; channel: Channel; lang: Lang }) {
   const { location: loc, lang } = props;
   return (
     <header class="top">
       <div class="place">
-        <h1>{loc.name}</h1>
-        <div class="region">{[loc.adminArea, loc.country].filter(Boolean).join(', ')}</div>
+        <h1>
+          {G.pin()}
+          <span>{loc.name}</span>
+        </h1>
+        <div class="region">{[loc.adminArea, loc.country].filter((x) => x && x !== loc.name).join(', ')}</div>
       </div>
-      <button class="btn" type="button" data-units-toggle aria-label={t(lang, 'SwitchUnits')}>
+      <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(lang, 'SwitchUnits')}>
         °C
       </button>
       <button class="btn" type="button" data-save aria-pressed="false" aria-label={t(lang, 'AddToMyCities')}>
-        {STAR}
+        {G.star()}
       </button>
       <a class="btn" data-nav href={citiesPath(props.channel, lang)} aria-label={t(lang, 'MyCitiesTitle')}>
-        {LIST}
+        {G.list()}
       </a>
     </header>
   );
 }
 
-/** 子页顶部：返回城市主页 */
+/** 子页顶部：返回城市主页 + 页面标题 */
 export function SubBar(props: { location: WeatherLocation; channel: Channel; lang: Lang; title: string }) {
-  const back = textDirection(props.lang) === 'rtl' ? '→' : '←';
   return (
     <header class="top">
       <div class="place">
         <a class="back" data-nav href={cityPath(props.channel, props.lang, props.location.id)}>
-          {back} {props.location.name}
+          {G.back()}
+          <span>{props.location.name}</span>
         </a>
-        <h1>{props.title}</h1>
+        <h1>
+          <span>{props.title}</span>
+        </h1>
       </div>
-      <button class="btn" type="button" data-units-toggle aria-label={t(props.lang, 'SwitchUnits')}>
+      <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(props.lang, 'SwitchUnits')}>
         °C
       </button>
     </header>
@@ -185,6 +319,10 @@ export function clientStrings(lang: Lang): Record<string, string> {
     'LoadingSavedCities',
     'RemoveCityAria',
     'CurrentLocation',
+    'GuessRight',
+    'GuessWrong',
+    'GuessPercentRight',
+    'ForecastFeedbackThanks',
   ];
   const out: Record<string, string> = {};
   for (const k of keys) out[k] = t(lang, k);
@@ -194,29 +332,36 @@ export function clientStrings(lang: Lang): Record<string, string> {
   return out;
 }
 
+/** 没有城市数据的页面（我的城市、错误页）用的天空 */
+const DEFAULT_SKY: Sky = { phase: 'night', weather: 'cloudy', someClouds: false, arc: 0.5, showDisc: false, intensity: 0, sleet: false, fine: false, wind: 0, windSign: -1, dust: 0, seed: 'default', className: 'sky-night wx-cloudy' };
+
+const THEME: Record<string, string> = { day: '#2f6fd6', dawn: '#3e4c8c', golden: '#3c6cc4', dusk: '#1c295c', night: '#060d26' };
+
 export function Layout(props: {
   lang: Lang;
   title: string;
-  bg: string;
+  sky?: Sky;
   devNote?: string;
   pageData: Record<string, unknown>;
   preloadIcon?: string;
   children?: Child;
 }) {
   const { lang } = props;
+  const sky = props.sky ?? DEFAULT_SKY;
+  const theme = sky.weather === 'clear' ? THEME[sky.phase] : sky.phase === 'night' ? '#0b111f' : '#4a5670';
   return (
     <html lang={intlLocale(lang)} dir={textDirection(lang)}>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
         <meta name="robots" content="noindex" />
-        <meta name="theme-color" content="#1b2a4a" />
+        <meta name="theme-color" content={theme} />
         <title>{props.title}</title>
         {props.preloadIcon ? <link rel="preload" as="image" href={`/img/weather/${iconImage(props.preloadIcon)}`} /> : null}
         <style>{raw(CSS)}</style>
       </head>
-      <body class={`bg-${props.bg}`}>
-        <Sky bg={props.bg} />
+      <body class={sky.className}>
+        <SkyLayers sky={sky} />
         {props.devNote ? <div class="dev">{props.devNote}</div> : null}
         <div class="wrap">{props.children}</div>
         <PageData data={{ lang, intl: intlLocale(lang), ...props.pageData, strings: clientStrings(lang) }} />
