@@ -44,7 +44,7 @@ describe('Foreca symbol → icon', () => {
     ['d430', 'rainy-moderate'],
     ['d240', 'stormy-rain-medium'],
     ['d211', 'sleet-light'],
-    ['d421', 'sleet-light'], // sleet-moderate 修好前暂用 sleet-light
+    ['d421', 'sleet-moderate'], // sleet-moderate 已修好（去掉了误画的闪电）
     ['d212', 'snowy-light'],
     ['d222', 'snowy-flurries'],
     ['d432', 'snowy-moderate'],
