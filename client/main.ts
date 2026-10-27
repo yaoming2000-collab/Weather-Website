@@ -3,6 +3,7 @@
  * 页面主体由服务器生成并被 CDN 缓存；这里只处理因人而异、因时而异的部分。
  */
 import { iconImage } from '../src/weather/icons';
+import { normalizeSearch, searchLongEnough } from '../src/weather/search';
 import {
   addCity,
   LEGACY_COOKIE,
@@ -304,28 +305,36 @@ function setupSearch() {
   if (!form || !box || !input) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let seq = 0;
+  /** 本页已经搜过的结果，删字、重打时不再请求 */
+  const seen = new Map<string, Card[]>();
+  const show = (items: Card[]) =>
+    box.replaceChildren(...(items.length ? items.map((c) => cityRow(c)) : [el('div', { class: 'empty' }, s('NoMatchingCities'))]));
   const run = async () => {
-    const q = input.value.trim();
-    if (q.length < 2) {
+    const q = normalizeSearch(input.value);
+    if (!searchLongEnough(q)) {
       box.hidden = true;
       return;
     }
     const my = ++seq;
     box.hidden = false;
+    const known = seen.get(q);
+    if (known) return show(known);
     box.replaceChildren(el('div', { class: 'empty' }, s('Searching')));
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&lang=${encodeURIComponent(data.lang)}`);
       if (my !== seq) return;
       if (!res.ok) throw new Error(String(res.status));
       const { items } = (await res.json()) as { items: Card[] };
-      box.replaceChildren(...(items.length ? items.map((c) => cityRow(c)) : [el('div', { class: 'empty' }, s('NoMatchingCities'))]));
+      seen.set(q, items);
+      show(items);
     } catch {
       if (my === seq) box.replaceChildren(el('div', { class: 'empty' }, s('SearchFailed')));
     }
   };
+  // 停止输入 0.5 秒后才搜索，避免每打一个字查一次（每次查询 Foreca 都计费）
   input.addEventListener('input', () => {
     clearTimeout(timer);
-    timer = setTimeout(run, 300);
+    timer = setTimeout(run, 500);
   });
   form.addEventListener('submit', (e) => {
     e.preventDefault();

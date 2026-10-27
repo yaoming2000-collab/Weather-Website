@@ -77,6 +77,13 @@ export function createApp(
   app.get('/api/search', async (c) => {
     const q = c.req.query('q') ?? '';
     const lang = isLang(c.req.query('lang')) ? (c.req.query('lang') as Lang) : 'en';
+    // 每次搜索都向 Foreca 计费：每个 IP 限制频率，防止机器人消耗额度
+    const limiter = c.env?.SEARCH_LIMITER;
+    if (limiter) {
+      const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+      const { success } = await limiter.limit({ key: `search:${ip}` }).catch(() => ({ success: true }));
+      if (!success) return c.json({ error: 'too many requests' }, 429);
+    }
     try {
       const items = await c.var.weather.search(q, lang);
       c.header('Cache-Control', 'public, max-age=3600');

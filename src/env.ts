@@ -8,6 +8,8 @@ export interface Env {
   WEATHER_KV?: KVNamespace;
   /** 猜一猜计数和排行榜（第 3 步）。没有绑定时退回内存存储 */
   DB?: D1Database;
+  /** 城市搜索的频率限制（每个 IP 每分钟次数，见 wrangler.toml [[ratelimits]]）。没有绑定时不限制 */
+  SEARCH_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
   /** 静态文件 */
   ASSETS?: Fetcher;
 }

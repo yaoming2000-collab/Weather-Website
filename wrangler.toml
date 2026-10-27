@@ -31,6 +31,16 @@ migrations_dir = "migrations"
 [triggers]
 crons = ["17 3 * * *"]
 
+# 城市搜索的频率限制：每个 IP 每 60 秒最多 30 次（每次搜索都向 Foreca 计费，防止机器人消耗额度）。
+# 计数按 Cloudflare 机房分别统计。需要 wrangler 4.36 或更新版本。
+[[ratelimits]]
+name = "SEARCH_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
 [vars]
 # foreca = 调用真实接口（需要 FORECA_TOKEN 密钥）；mock = 使用模拟数据（开发、预览用）
 WEATHER_PROVIDER = "foreca"
@@ -46,6 +56,12 @@ WEATHER_PROVIDER = "foreca"
 # ---------------------------------------------------------------------------
 [env.preview]
 name = "weather-itsfunmag-preview"
+
+# 测试环境也用真实 Foreca 时，同样限制搜索频率（绑定不会从上面继承）
+[[env.preview.ratelimits]]
+name = "SEARCH_LIMITER"
+namespace_id = "1002"
+simple = { limit = 30, period = 60 }
 
 [env.preview.vars]
 WEATHER_PROVIDER = "mock"

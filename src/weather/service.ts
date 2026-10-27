@@ -10,6 +10,9 @@ import { hasRadar } from '../config/radar';
 import type { CacheEntry, CacheStore } from '../cache/store';
 import { currentHourIndex, localDate, monthDayOf, nextLocalMidnight } from '../time/cityTime';
 import { forecaLocationLang } from './foreca/langs';
+import { normalizeSearch, searchLongEnough } from './search';
+
+export { normalizeSearch, searchLongEnough };
 import { ProviderError, type WeatherProvider } from './provider';
 import type {
   AirQualityPoint,
@@ -378,16 +381,4 @@ function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
     timer = setTimeout(() => reject(new ProviderError(`took longer than ${ms} ms`)), ms);
   });
   return Promise.race([p, timeout]).finally(() => timer !== undefined && clearTimeout(timer));
-}
-
-/** 搜索关键字：去掉首尾空格、转小写、最长 60 个字符 */
-export function normalizeSearch(query: string): string {
-  return query.trim().toLowerCase().slice(0, 60);
-}
-
-/** 至少 3 个字符；中日韩文字 2 个字即可（"北京"、"東京"、"서울"） */
-export function searchLongEnough(q: string): boolean {
-  const n = Array.from(q).length;
-  if (n >= 3) return true;
-  return n === 2 && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(q);
 }

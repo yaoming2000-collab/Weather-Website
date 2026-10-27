@@ -165,6 +165,16 @@ describe('city page', () => {
 });
 
 describe('api', () => {
+  it('limits how often one visitor can search', async () => {
+    let n = 0;
+    const env = { SEARCH_LIMITER: { limit: async () => ({ success: ++n <= 2 }) } };
+    const a = app();
+    const ask = () => a.request(req('/api/search?q=london&lang=en', { headers: { 'CF-Connecting-IP': '1.2.3.4' } }), {}, env);
+    expect((await ask()).status).toBe(200);
+    expect((await ask()).status).toBe(200);
+    expect((await ask()).status).toBe(429);
+  });
+
   it('searches cities', async () => {
     const res = await app().request(req('/api/search?q=ist&lang=tr'));
     const body = (await res.json()) as { items: Array<{ id: string; name: string }> };
