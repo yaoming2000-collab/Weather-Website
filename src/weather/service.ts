@@ -29,6 +29,9 @@ import type {
 /** 每次真正调用供应商时记一笔（调用统计用） */
 export interface UsageRecorder {
   record(kind: string, cityId: string | null, ok: boolean): void;
+  /** 攒够了该写入存储了吗 */
+  due?(): boolean;
+  flush?(): Promise<void>;
 }
 
 interface FailureMark {
@@ -51,6 +54,11 @@ export class WeatherService {
     private readonly random: () => number = Math.random,
     private readonly usage?: UsageRecorder,
   ) {}
+
+  /** 调用统计攒够了时返回写入任务（由 app 在请求结束后放进 waitUntil），否则返回 null */
+  usageFlush(): Promise<void> | null {
+    return this.usage?.due?.() && this.usage.flush ? this.usage.flush() : null;
+  }
 
   get providerName(): string {
     return this.provider.name;

@@ -5,7 +5,7 @@ const NOW = Date.UTC(2026, 9, 22, 12, 0);
 const H = 3600_000;
 
 function rec(cityId: string, deltaMax: number, updatedAt = NOW, date = '2026-10-22'): AnomalyRecord {
-  return { cityId, name: cityId, country: null, date, deltaMax, maxTemp: 20 + deltaMax, avgMaxTemp: 20, level: 'normal', updatedAt };
+  return { cityId, name: cityId, country: null, date, deltaMax, maxTemp: 20 + deltaMax, avgMaxTemp: 20, level: 'normal', updatedAt, validUntil: updatedAt + 12 * H };
 }
 
 describe('guess counter', () => {
@@ -35,6 +35,13 @@ describe('guess counter', () => {
 });
 
 describe('ranking', () => {
+  it('drops a city once its local day is over', async () => {
+    const s = new MemoryFeatureStore();
+    await s.recordAnomaly({ ...rec('ended', 12), validUntil: NOW - 1 });
+    await s.recordAnomaly(rec('today', 4));
+    expect((await s.ranking(NOW)).warmest.map((r) => r.cityId)).toEqual(['today']);
+  });
+
   it('splits warmest and coldest, top first, from the last 24 hours', async () => {
     const s = new MemoryFeatureStore();
     for (const r of [rec('a', 3), rec('b', 9), rec('c', -4), rec('d', -1), rec('e', 0), rec('old', 15, NOW - 25 * H)]) await s.recordAnomaly(r);

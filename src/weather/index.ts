@@ -1,5 +1,6 @@
 import { CacheApiStore, KvStore, MemoryStore, TieredStore, type CacheStore } from '../cache/store';
 import type { Env } from '../env';
+import { D1Usage } from '../features/usage';
 import { ForecaProvider } from './foreca/client';
 import { MockProvider } from './mock';
 import type { WeatherProvider } from './provider';
@@ -22,5 +23,7 @@ export function createStore(env: Env): CacheStore {
 }
 
 export function createWeatherService(env: Env): WeatherService {
-  return new WeatherService(createProvider(env), createStore(env));
+  // 调用统计写在 D1（线上）；没有数据库的测试环境不统计
+  const usage = env.DB ? new D1Usage(env.DB) : undefined;
+  return new WeatherService(createProvider(env), createStore(env), undefined, undefined, undefined, usage);
 }

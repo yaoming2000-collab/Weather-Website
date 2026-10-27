@@ -274,3 +274,17 @@ describe('nowcast trigger', () => {
   });
 });
 
+describe('usage recording', () => {
+  it('records each real provider call with its kind and city, but not cache hits', async () => {
+    const seen: string[] = [];
+    const provider = new MockProvider(() => Date.UTC(2026, 9, 22, 3, 0));
+    const svc = new WeatherService(provider, new MemoryStore(), () => Date.UTC(2026, 9, 22, 3, 0), () => undefined, () => 1, {
+      record: (kind, city, ok) => seen.push(`${kind}|${city}|${ok}`),
+    });
+    await svc.current('102643743');
+    await svc.current('102643743');
+    await expect(svc.location('999999')).rejects.toBeInstanceOf(ProviderError);
+    expect(seen).toEqual(['cur|102643743|true', 'loc|999999|false']);
+  });
+});
+

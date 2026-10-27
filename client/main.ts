@@ -138,33 +138,36 @@ function applyTime() {
 
 let refreshing = false;
 
-async function refreshCurrent() {
-  const city = data.city;
+/**
+ * 页面开着超过 20 分钟时，重新取一次本页（通常直接来自 CDN 缓存，不会多调用天气接口），
+ * 把实况、降雨时间轴、逐小时、7 天、空气质量、各项指标和背景天空整块换成新的。
+ * 只换标了 data-live 的区域，广告位不动。数据没有比现在新时什么也不做。
+ */
+async function refreshLive() {
   const updated = document.querySelector<HTMLElement>('[data-fetched]');
-  if (!city || !updated || refreshing) return;
+  if (!updated || refreshing) return;
   if (Date.now() - Number(updated.dataset.fetched) < REFRESH_AFTER_MS) return;
   refreshing = true;
   try {
-    const res = await fetch(`/api/w/${encodeURIComponent(city.id)}/now`);
+    const res = await fetch(location.pathname, { headers: { Accept: 'text/html' } });
     if (!res.ok) return;
-    const body = (await res.json()) as { fetchedAt: number; current: { temperature: number | null; icon: string } };
-    const hero = document.querySelector('[data-current]');
-    if (!hero || body.fetchedAt <= Number(updated.dataset.fetched)) return;
-    const temp = hero.querySelector<HTMLElement>('[data-current-temp] [data-c]');
-    if (temp && body.current.temperature !== null) temp.dataset.c = String(body.current.temperature);
-    const img = hero.querySelector<HTMLImageElement>('img[data-icon]');
-    // 沙尘天的图标和描述来自空气质量，接口返回的天气图标里没有沙尘，不覆盖
-    if (img && !document.body.classList.contains('wx-dust')) {
-      img.src = `/img/weather/${iconImage(body.current.icon)}`;
-      img.dataset.icon = body.current.icon;
+    const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+    const fresh = doc.querySelector<HTMLElement>('[data-fetched]');
+    if (!fresh || Number(fresh.dataset.fetched) <= Number(updated.dataset.fetched)) return;
+    for (const el of $$('[data-live]')) {
+      const next = doc.querySelector(`[data-live="${el.dataset.live}"]`);
+      if (next) el.replaceWith(document.importNode(next, true));
     }
-    const cond = hero.querySelector('[data-current-cond]');
-    if (cond && !document.body.classList.contains('wx-dust')) cond.textContent = s(`Cond_${body.current.icon === 'night' ? 'night' : body.current.icon.replace(/^night-/, '')}`);
-    updated.dataset.fetched = String(body.fetchedAt);
-    applyUnits(currentSystem(), hero);
+    const sky = document.querySelector('.sky');
+    const nextSky = doc.querySelector('.sky');
+    if (sky && nextSky) sky.replaceWith(document.importNode(nextSky, true));
+    document.body.className = doc.body.className;
+    const theme = doc.querySelector('meta[name="theme-color"]')?.getAttribute('content');
+    if (theme) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme);
+    applyUnits(currentSystem());
     applyTime();
   } catch {
-    // 网络失败时保留页面上的数据
+    // 网络不好时保持现有内容
   } finally {
     refreshing = false;
   }
@@ -518,12 +521,14 @@ function init() {
   setupShare();
   setupSkyIdle();
 
-  void refreshCurrent();
+  void refreshLive();
   setInterval(applyTime, 60_000);
+  // 页面一直开着时，每 5 分钟检查一次是否该更新（只在页面可见时）
+  setInterval(() => document.visibilityState === 'visible' && void refreshLive(), 5 * 60_000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       applyTime();
-      void refreshCurrent();
+      void refreshLive();
     }
   });
 }

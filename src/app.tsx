@@ -56,6 +56,9 @@ export function createApp(
     c.set('features', sharedFeatures);
     await next();
     c.res.headers.set('X-Robots-Tag', 'noindex');
+    // Foreca 调用统计：攒够一批后在后台写进数据库
+    const flush = shared.usageFlush();
+    if (flush) waitUntil(c, flush);
   });
 
   // ---------- 接口（给浏览器脚本用） ----------
