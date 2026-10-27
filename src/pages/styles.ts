@@ -18,8 +18,8 @@ export const CSS = `
   --ease:cubic-bezier(.2,.7,.2,1);
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;background:var(--sky1)}
-body{margin:0;min-height:100vh;color:var(--fg);background:linear-gradient(180deg,var(--sky1) 0%,var(--sky2) 48%,var(--sky3) 100%) fixed;
+html{-webkit-text-size-adjust:100%;background:#1b2a4a}
+body{margin:0;min-height:100vh;color:var(--fg);background:var(--sky3);
   font:15px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans","Helvetica Neue",Arial,sans-serif;
   -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
 a{color:inherit;text-decoration:none}
@@ -51,52 +51,93 @@ bdi{unicode-bidi:isolate}
 .wx-fog.sky-twilight{--sky1:#6a6976;--sky2:#97929e;--sky3:#c8bcba;--glass:rgba(40,36,48,.34)}
 .wx-fog.sky-night{--sky1:#1b1f27;--sky2:#2c313b;--sky3:#454b57}
 
-/* ---------- 天空：图层 ---------- */
-.sky{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+/* ---------- 天空：图层 ----------
+ * 动画规则（2026-10-27 检查后重做）：
+ * 1. 只动 transform 和 opacity：由显卡合成，不触发重绘，低端手机也不掉帧。
+ *    之前的雨、雪是移动背景图案（background-position），每帧重绘，而且图案循环衔接不上，每 0.5 秒跳一下，看起来在抖。
+ * 2. 天空层高度用 100vh 而不是"铺满可视区"：手机浏览器地址栏收起/展开时可视区高度会变，
+ *    铺满可视区会让整个天空和粒子跟着伸缩、跳动；100vh 在手机上是固定的最大高度，不会变。
+ * 3. 位置用百分比、距离用 vh，不同尺寸、横竖屏的手机效果一致。
+ * 4. 不用 filter: blur（模糊滤镜很耗性能），柔和效果靠渐变本身。
+ * 5. 系统开启"减少动态效果"时，所有动画停止，雨雪粒子隐藏。
+ */
+.sky{position:fixed;left:0;top:0;width:100%;height:100vh;z-index:0;pointer-events:none;overflow:hidden;contain:strict;
+  background:linear-gradient(180deg,var(--sky1) 0%,var(--sky2) 48%,var(--sky3) 100%)}
 .sky>*{position:absolute}
 .sun{left:var(--sx);top:var(--sy);width:0;height:0}
 .sun::before{content:"";position:absolute;width:520px;height:520px;left:-260px;top:-260px;border-radius:50%;
   background:radial-gradient(circle,rgba(255,255,255,.95) 0,rgba(255,250,230,.8) 4.5%,rgba(255,244,214,.3) 11%,rgba(255,240,210,.1) 28%,transparent 60%)}
-.sun::after{content:"";position:absolute;width:900px;height:900px;left:-450px;top:-450px;border-radius:50%;opacity:.5;
-  background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.16) 0 1.2deg,transparent 1.2deg 9deg);
-  -webkit-mask:radial-gradient(circle,#000 6%,transparent 55%);mask:radial-gradient(circle,#000 6%,transparent 55%);
-  animation:spin 160s linear infinite}
+/* 光芒：静止不转（细线旋转会闪烁），只缓慢明暗变化 */
+.sun::after{content:"";position:absolute;width:820px;height:820px;left:-410px;top:-410px;border-radius:50%;opacity:.4;
+  background:repeating-conic-gradient(from 7deg,rgba(255,255,255,.14) 0 2.4deg,transparent 2.4deg 11deg);
+  -webkit-mask:radial-gradient(circle,#000 6%,transparent 52%);mask:radial-gradient(circle,#000 6%,transparent 52%);
+  animation:breathe 9s ease-in-out infinite alternate}
 .sky-dawn .sun::before,.sky-golden .sun::before,.sky-dusk .sun::before{
   background:radial-gradient(circle,rgba(255,250,235,.95) 0,rgba(255,214,150,.8) 6%,rgba(255,180,120,.35) 16%,rgba(255,160,110,.12) 34%,transparent 64%)}
 .wx-cloudy .sun{opacity:.42}.wx-cloudy .sun::after{display:none}
 .moon{left:var(--sx);top:var(--sy);width:0;height:0}
 .moon::before{content:"";position:absolute;width:420px;height:420px;left:-210px;top:-210px;border-radius:50%;
   background:radial-gradient(circle,rgba(235,240,255,.55) 0,rgba(210,222,255,.22) 6%,rgba(170,190,255,.09) 22%,transparent 58%)}
-.stars{inset:0 0 35%;opacity:.8;
-  background-image:radial-gradient(1.4px 1.4px at 23px 31px,#fff 50%,transparent 51%),radial-gradient(1px 1px at 117px 83px,#fff 50%,transparent 51%),radial-gradient(1.2px 1.2px at 201px 17px,rgba(255,255,255,.85) 50%,transparent 51%),radial-gradient(1px 1px at 61px 141px,rgba(255,255,255,.7) 50%,transparent 51%),radial-gradient(1.6px 1.6px at 271px 119px,#fff 50%,transparent 51%);
-  background-size:300px 180px;-webkit-mask:linear-gradient(#000,transparent);mask:linear-gradient(#000,transparent);animation:twinkle 5s ease-in-out infinite alternate}
-.stars.s2{background-size:420px 260px;background-position:90px 40px;animation-duration:7s;animation-delay:-3s;opacity:.5}
-.clouds{left:-30%;width:160%;top:4%;height:46%;opacity:0;animation:drift 110s linear infinite alternate;
-  background:radial-gradient(60px 34px at 12% 30%,rgba(255,255,255,.9),transparent 70%),radial-gradient(90px 44px at 18% 34%,rgba(255,255,255,.8),transparent 70%),
-    radial-gradient(70px 36px at 46% 18%,rgba(255,255,255,.85),transparent 70%),radial-gradient(110px 50px at 54% 24%,rgba(255,255,255,.75),transparent 70%),
-    radial-gradient(80px 40px at 80% 40%,rgba(255,255,255,.85),transparent 70%),radial-gradient(120px 54px at 88% 44%,rgba(255,255,255,.7),transparent 70%);
-  filter:blur(6px)}
-.clouds.c2{top:20%;opacity:0;animation-duration:170s;animation-direction:alternate-reverse;transform:scale(1.4)}
-.wx-some .clouds{opacity:.55}.wx-some .clouds.c2{opacity:.3}
-.wx-cloudy .clouds{opacity:.75}.wx-cloudy .clouds.c2{opacity:.55}
-.wx-rain .clouds,.wx-storm .clouds,.wx-snow .clouds{opacity:.35;filter:blur(8px) brightness(.8)}
-.sky-night .clouds{filter:blur(8px) brightness(.45)}
-.rain,.rain2{inset:-30% 0 0;opacity:.55;background-image:repeating-linear-gradient(104deg,transparent 0 18px,rgba(220,235,255,.45) 18px 19px,transparent 19px 41px);background-size:41px 140px;animation:fall .55s linear infinite}
-.rain2{opacity:.3;background-size:29px 90px;animation-duration:.8s}
-.snow,.snow2{inset:-30% 0 0;opacity:.9;background-image:radial-gradient(2.6px 2.6px at 20px 30px,#fff 50%,transparent 51%),radial-gradient(2px 2px at 90px 80px,#fff 50%,transparent 51%),radial-gradient(3px 3px at 150px 40px,rgba(255,255,255,.95) 50%,transparent 51%),radial-gradient(1.8px 1.8px at 60px 120px,#fff 50%,transparent 51%);background-size:190px 150px;animation:flake 10s linear infinite}
-.snow2{opacity:.5;background-size:120px 100px;animation-duration:16s}
-.flash{inset:0;background:radial-gradient(ellipse at 60% 10%,rgba(220,225,255,.55),transparent 60%);opacity:0;animation:flash 9s infinite}
-.fog,.fog2{left:-20%;right:-20%;height:30%;filter:blur(18px);background:linear-gradient(transparent,rgba(255,255,255,.28) 40%,rgba(255,255,255,.28) 60%,transparent);animation:drift 60s ease-in-out infinite alternate}
-.fog{top:22%}.fog2{top:58%;animation-duration:90s;opacity:.7}
+
+.stars{inset:0}
+.stars i{position:absolute;left:var(--x);top:var(--y);width:var(--s);height:var(--s);border-radius:50%;background:#fff;opacity:var(--o)}
+.stars i.tw{animation:twinkle 4.5s ease-in-out var(--d) infinite alternate}
+
+/* 云：两层慢慢平移；颜色随天色变化（夜里暗、雨天灰） */
+body{--cl:255,255,255}
+.wx-rain,.wx-storm,.wx-snow{--cl:200,207,222}
+.sky-night{--cl:120,132,165}
+.clouds{left:-30%;width:160%;top:2%;height:50%;opacity:0;will-change:transform;animation:drift 120s ease-in-out infinite alternate;
+  background:radial-gradient(70px 38px at 12% 30%,rgba(var(--cl),.75),transparent),radial-gradient(110px 52px at 18% 36%,rgba(var(--cl),.6),transparent),
+    radial-gradient(80px 40px at 46% 18%,rgba(var(--cl),.7),transparent),radial-gradient(130px 58px at 54% 26%,rgba(var(--cl),.55),transparent),
+    radial-gradient(90px 44px at 80% 40%,rgba(var(--cl),.7),transparent),radial-gradient(140px 62px at 88% 46%,rgba(var(--cl),.5),transparent)}
+.clouds.c2{top:22%;animation-duration:180s;animation-direction:alternate-reverse;transform:scale(1.4)}
+.wx-some .clouds{opacity:.6}.wx-some .clouds.c2{opacity:.35}
+.wx-cloudy .clouds{opacity:.8}.wx-cloudy .clouds.c2{opacity:.6}
+.wx-rain .clouds,.wx-storm .clouds,.wx-snow .clouds{opacity:.4}
+
+/* 雨：每一滴一个元素，斜向下落 */
+.rain{inset:0}
+.rain i{position:absolute;top:0;left:var(--x);width:1.5px;height:var(--l);border-radius:1px;
+  background:linear-gradient(rgba(225,236,255,0),rgba(225,236,255,var(--o)));
+  transform:translate3d(0,-20vh,0) rotate(12deg);will-change:transform;
+  animation:drop var(--t) linear var(--d) infinite}
+@keyframes drop{from{transform:translate3d(0,-20vh,0) rotate(12deg)}to{transform:translate3d(-26vh,112vh,0) rotate(12deg)}}
+
+/* 雪：外层下落，内层左右飘 */
+.snow{inset:0}
+.snow i{position:absolute;top:0;left:var(--x);opacity:var(--o);transform:translate3d(0,-6vh,0);will-change:transform;
+  animation:fall var(--t) linear var(--d) infinite}
+.snow b{display:block;width:var(--s);height:var(--s);border-radius:50%;background:#fff;box-shadow:0 0 4px rgba(255,255,255,.8);
+  animation:sway var(--w) ease-in-out infinite alternate}
+@keyframes fall{from{transform:translate3d(0,-6vh,0)}to{transform:translate3d(0,106vh,0)}}
+@keyframes sway{from{transform:translateX(-12px)}to{transform:translateX(12px)}}
+
+/* 雷暴：每 11 秒一次柔和的亮光（不连续闪烁，避免刺眼） */
+.flash{inset:0;background:radial-gradient(ellipse at 60% 8%,rgba(220,225,255,.5),transparent 62%);opacity:0;animation:flash 11s ease-out infinite}
+
+/* 雾：两条很宽的柔和雾带缓慢平移 */
+.fog{left:-25%;width:150%;top:18%;height:40%;will-change:transform;animation:drift 70s ease-in-out infinite alternate;
+  background:linear-gradient(rgba(255,255,255,0),rgba(255,255,255,.22) 35%,rgba(255,255,255,.26) 50%,rgba(255,255,255,.22) 65%,rgba(255,255,255,0))}
+.fog.f2{top:55%;opacity:.75;animation-duration:100s;animation-direction:alternate-reverse}
+
+/* 有雨雪粒子时，卡片不用毛玻璃模糊：后面的粒子每帧都在动，模糊要跟着每帧重算，低端手机会卡；改用更不透明的底色 */
+.wx-rain,.wx-storm{--glass-wet:rgba(34,44,64,.72)}
+.wx-snow{--glass-wet:rgba(44,62,96,.66)}
+.sky-night.wx-rain,.sky-night.wx-storm,.sky-night.wx-snow{--glass-wet:rgba(12,18,32,.74)}
+:is(.wx-rain,.wx-storm,.wx-snow) :is(.card,.tile){-webkit-backdrop-filter:none;backdrop-filter:none;background:var(--glass-wet)}
+:is(.wx-rain,.wx-storm,.wx-snow) :is(.btn,.jump a:not([aria-current]),.vs,.search input){-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(255,255,255,.2)}
+
 /* 顶部压暗一点，保证城市名在亮的天空上也看得清 */
 .sky::after{content:"";position:absolute;inset:0 0 auto;height:150px;background:linear-gradient(rgba(0,0,0,.14),transparent)}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes twinkle{from{opacity:.45}to{opacity:.9}}
-@keyframes drift{to{transform:translateX(-12%)}}
-@keyframes fall{to{background-position:-34px 140px}}
-@keyframes flake{to{background-position:30px 150px}}
-@keyframes flash{0%,90%,100%{opacity:0}91%{opacity:1}92%{opacity:.2}93.5%{opacity:.8}96%{opacity:0}}
-@media (prefers-reduced-motion:reduce){.sky *,.sky *::after{animation:none!important}}
+@keyframes breathe{from{opacity:.28}to{opacity:.5}}
+@keyframes twinkle{from{opacity:var(--o)}to{opacity:.15}}
+@keyframes drift{to{transform:translate3d(-10%,0,0)}}
+@keyframes flash{0%,93%,100%{opacity:0}94.5%{opacity:1}97%{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+  .sky *,.sky *::after{animation:none!important}
+  .rain,.snow{display:none}
+}
 
 /* ---------- 顶部 ---------- */
 .top{display:flex;align-items:center;gap:8px;min-height:52px;text-shadow:0 1px 10px rgba(0,0,0,.18)}

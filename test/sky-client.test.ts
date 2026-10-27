@@ -55,3 +55,23 @@ describe('guess and vote records', () => {
     expect(book['c69|2026-10-26']?.v).toBe('up');
   });
 });
+
+describe('sky particles', () => {
+  it('scales rain and snow with the weather and keeps positions stable for cached pages', async () => {
+    const { precipIntensity } = await import('../src/pages/sky');
+    expect(precipIntensity('rainy-drizzle')).toBe(1);
+    expect(precipIntensity('night-rainy-moderate')).toBe(2);
+    expect(precipIntensity('stormy-rain-light')).toBe(3);
+    expect(precipIntensity('snowy-heavy')).toBe(3);
+    expect(precipIntensity('sunny')).toBe(0);
+
+    const { SkyLayers } = await import('../src/pages/components');
+    const sky = computeSky({ ...base, icon: 'rainy-moderate', nowMs: at(12) });
+    const a = String(await SkyLayers({ sky }));
+    const b = String(await SkyLayers({ sky }));
+    expect(a).toBe(b);
+    expect(a.match(/<i style="--x:/g)).toHaveLength(60);
+    // 只用 transform 动画的粒子：内联样式里不能出现 background-position
+    expect(a).not.toContain('background-position');
+  });
+});

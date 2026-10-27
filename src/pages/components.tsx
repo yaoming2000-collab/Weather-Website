@@ -82,26 +82,99 @@ export function AdSlot(props: { slot: string; height?: number; lang: Lang; previ
   );
 }
 
-/** 天空图层：太阳或月亮、星星、云、雨、雪、闪电、雾（见 sky.ts） */
+/** 简单的确定性随机数：同一个种子每次得到同一串数字（页面被缓存，粒子位置必须稳定） */
+function rng(seed: string): () => number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+const f = (n: number, d = 2) => n.toFixed(d);
+
+/** 雨滴：每一滴是一个独立元素，只用 transform 移动（显卡合成，不重绘，不抖） */
+function Rain(props: { seed: string; intensity: number }) {
+  const r = rng(`rain|${props.seed}`);
+  const level = Math.max(1, props.intensity);
+  const count = [0, 36, 60, 90][level]!;
+  const speed = [0, 1.15, 0.85, 0.62][level]!;
+  const drops = Array.from({ length: count }, () => {
+    const t = speed * (0.8 + r() * 0.45);
+    return {
+      x: r() * 112 - 2,
+      t,
+      d: -r() * t,
+      l: 10 + level * 4 + r() * 10,
+      o: 0.22 + level * 0.06 + r() * 0.22,
+    };
+  });
+  return (
+    <div class="rain">
+      {drops.map((d) => (
+        <i style={`--x:${f(d.x, 1)}%;--t:${f(d.t)}s;--d:${f(d.d)}s;--l:${f(d.l, 0)}px;--o:${f(d.o)}`} />
+      ))}
+    </div>
+  );
+}
+
+/** 雪花：外层负责下落，内层负责左右飘 */
+function Snow(props: { seed: string; intensity: number }) {
+  const r = rng(`snow|${props.seed}`);
+  const level = Math.max(1, props.intensity);
+  const count = [0, 30, 48, 72][level]!;
+  const flakes = Array.from({ length: count }, () => {
+    const t = 9 + r() * 9 - level;
+    return { x: r() * 100, t, d: -r() * t, s: 2 + r() * 3.5, o: 0.55 + r() * 0.45, w: 2.6 + r() * 2.4 };
+  });
+  return (
+    <div class="snow">
+      {flakes.map((k) => (
+        <i style={`--x:${f(k.x, 1)}%;--t:${f(k.t)}s;--d:${f(k.d)}s;--o:${f(k.o)}`}>
+          <b style={`--s:${f(k.s, 1)}px;--w:${f(k.w)}s`} />
+        </i>
+      ))}
+    </div>
+  );
+}
+
+/** 星星：随机分布在上半屏，约三分之一会缓慢闪烁 */
+function Stars(props: { seed: string }) {
+  const r = rng(`stars|${props.seed}`);
+  const stars = Array.from({ length: 64 }, () => ({ x: r() * 100, y: r() * 58, s: 1 + r() * 1.4, o: 0.35 + r() * 0.6, tw: r() < 0.33, d: -r() * 6 }));
+  return (
+    <div class="stars">
+      {stars.map((s) => (
+        <i
+          class={s.tw ? 'tw' : undefined}
+          style={`--x:${f(s.x, 1)}%;--y:${f(s.y, 1)}%;--s:${f(s.s, 1)}px;--o:${f(s.o)};--d:${f(s.d)}s`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** 天空图层：渐变底色、太阳或月光、星星、云、雨、雪、闪电、雾（见 sky.ts） */
 export function SkyLayers(props: { sky: Sky }) {
   const { sky } = props;
   const pos = discPosition(sky.arc);
   const night = sky.phase === 'night';
   const w = sky.weather;
+  const wet = w === 'rain' || w === 'storm';
   return (
     <div class="sky" aria-hidden="true" style={`--sx:${pos.x}%;--sy:${pos.y}%`}>
-      {night && (w === 'clear' || w === 'cloudy') ? <div class="stars" /> : null}
-      {night && w === 'clear' ? <div class="stars s2" /> : null}
+      {night && (w === 'clear' || w === 'cloudy') ? <Stars seed={sky.seed} /> : null}
       {sky.showDisc ? <div class={night ? 'moon' : 'sun'} /> : null}
       {w !== 'fog' ? <div class="clouds" /> : null}
       {w !== 'fog' ? <div class="clouds c2" /> : null}
-      {w === 'rain' || w === 'storm' ? <div class="rain2" /> : null}
-      {w === 'rain' || w === 'storm' ? <div class="rain" /> : null}
+      {wet ? <Rain seed={sky.seed} intensity={sky.intensity} /> : null}
       {w === 'storm' ? <div class="flash" /> : null}
-      {w === 'snow' ? <div class="snow2" /> : null}
-      {w === 'snow' ? <div class="snow" /> : null}
+      {w === 'snow' ? <Snow seed={sky.seed} intensity={sky.intensity} /> : null}
       {w === 'fog' ? <div class="fog" /> : null}
-      {w === 'fog' ? <div class="fog2" /> : null}
+      {w === 'fog' ? <div class="fog f2" /> : null}
     </div>
   );
 }
@@ -222,7 +295,7 @@ export function clientStrings(lang: Lang): Record<string, string> {
 }
 
 /** 没有城市数据的页面（我的城市、错误页）用的天空 */
-const DEFAULT_SKY: Sky = { phase: 'night', weather: 'cloudy', someClouds: false, arc: 0.5, showDisc: false, className: 'sky-night wx-cloudy' };
+const DEFAULT_SKY: Sky = { phase: 'night', weather: 'cloudy', someClouds: false, arc: 0.5, showDisc: false, intensity: 0, seed: 'default', className: 'sky-night wx-cloudy' };
 
 const THEME: Record<string, string> = { day: '#2f6fd6', dawn: '#3e4c8c', golden: '#3c6cc4', dusk: '#1c295c', night: '#060d26' };
 

@@ -22,6 +22,10 @@ export interface Sky {
   arc: number;
   /** 是否显示太阳/月亮的圆盘 */
   showDisc: boolean;
+  /** 降水强度：0 无，1 小，2 中，3 大（雷暴按 3） */
+  intensity: 0 | 1 | 2 | 3;
+  /** 粒子位置的随机种子（同一城市同一小时相同，页面缓存时保持一致） */
+  seed: string;
   /** body 上的 class */
   className: string;
 }
@@ -79,6 +83,7 @@ export function computeSky(input: {
   }
 
   const { weather, someClouds } = skyWeather(input.icon);
+  const intensity = precipIntensity(input.icon);
   const showDisc = weather === 'clear' || (weather === 'cloudy' && phase !== 'night');
   const tone = weather === 'clear' ? phase : phase === 'night' ? 'night' : phase === 'day' ? 'day' : 'twilight';
   return {
@@ -87,8 +92,19 @@ export function computeSky(input: {
     someClouds,
     arc,
     showDisc,
+    intensity,
+    seed: `${input.timezone}|${p.hour}|${input.icon}`,
     className: `sky-${tone} wx-${weather}${someClouds ? ' wx-some' : ''}`,
   };
+}
+
+/** 按图标判断雨雪大小，决定雨滴、雪花的数量和速度 */
+export function precipIntensity(icon: string): 0 | 1 | 2 | 3 {
+  const key = icon.replace(/^night-/, '');
+  if (key.startsWith('stormy') || key.endsWith('-heavy')) return 3;
+  if (key.endsWith('-moderate') || key === 'rainy-freezing') return 2;
+  if (/^(rainy|snowy|sleet)/.test(key)) return 1;
+  return 0;
 }
 
 /** 太阳/月亮在视口里的位置（百分比），弧线：两端低、中间高 */
