@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
+import { pageCacheKey } from '../src/routing/urls';
 import { MemoryStore } from '../src/cache/store';
 import { MemoryFeatureStore } from '../src/features/store';
 import { MockProvider } from '../src/weather/mock';
@@ -99,6 +100,16 @@ describe('city page', () => {
     expect(html).toMatch(/<script src="\/static\/app.js" defer/);
     expect(res.headers.get('X-Robots-Tag')).toBe('noindex');
     expect(res.headers.get('X-Page-TTL')).toBe('300');
+  });
+
+  it('fills in the visitor channel in every link (one cached page serves all channels)', async () => {
+    for (const ch of ['mi', 'wme', 'wsearch-mi']) {
+      const html = await (await app().request(req(`/${ch}/en/w/102643743`))).text();
+      expect(html, ch).not.toContain('__ch__');
+      expect(html, ch).toContain(`href="/${ch}/en/w/102643743/hourly"`);
+      expect(html, ch).toContain(`"channel":"${ch}"`);
+    }
+    expect(pageCacheKey(new URL('https://w.example/mi/en/w/1/hourly?session=x'))).toBe('https://w.example/_/en/w/1/hourly');
   });
 
   it('shows a dash instead of 0 when a value is missing', async () => {
@@ -308,3 +319,61 @@ describe('step 3 pages', () => {
     expect((await a.request(req('/foo/en/ranking'))).status).toBe(404);
   });
 });
+
+describe('page cache', () => {
+  /** 简单的内存版 Cache API（只按网址存取） */
+  function fakeCache() {
+    const m = new Map<string, Response>();
+    return {
+      async match(r: Request) {
+        const hit = m.get(r.url);
+        return hit ? hit.clone() : undefined;
+      },
+      async put(r: Request, res: Response) {
+        m.set(r.url, new Response(await res.arrayBuffer(), res));
+      },
+      async delete(r: Request) {
+        return m.delete(r.url);
+      },
+      m,
+    };
+  }
+
+  it('re-renders a stale page only once, and shares one cached page across channels', async () => {
+    const cache = fakeCache();
+    const g = globalThis as { caches?: unknown };
+    const before = g.caches;
+    g.caches = { default: cache };
+    const pending: Promise<unknown>[] = [];
+    try {
+      let renders = 0;
+      const service = new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined);
+      const original = service.cityBundle.bind(service);
+      service.cityBundle = (id: string) => (renders++, original(id));
+      const a = createApp({ weather: () => service, features: () => new MemoryFeatureStore() });
+      const ctx = { waitUntil: (p: Promise<unknown>) => pending.push(p), passThroughOnException() {} };
+      const get = (path: string) => a.fetch(req(path), {}, ctx as unknown as ExecutionContext);
+
+      const first = await get('/wmi/en/w/102643743');
+      expect(first.headers.get('X-Page-Cache')).toBe('MISS');
+      await Promise.all(pending.splice(0));
+      const other = await get('/mi/en/w/102643743');
+      expect(other.headers.get('X-Page-Cache')).toBe('HIT');
+      expect(await other.text()).toContain('href="/mi/en/w/102643743/hourly"');
+      expect(renders).toBe(1);
+
+      // 把缓存里的页面改成很久以前生成的，再同时来 5 个请求：都拿到旧页面，后台只重做一次
+      const [k, v] = [...cache.m.entries()].find(([url]) => url.includes('/_/en/w/102643743'))!;
+      const old = new Response(await v.clone().text(), v);
+      old.headers.set('X-Rendered-At', String(Date.now() - 3600_000));
+      cache.m.set(k, old);
+      const res = await Promise.all([1, 2, 3, 4, 5].map(() => get('/wme/en/w/102643743')));
+      expect(res.every((r) => r.headers.get('X-Page-Cache') === 'STALE')).toBe(true);
+      await Promise.all(pending.splice(0));
+      expect(renders).toBe(2);
+    } finally {
+      g.caches = before;
+    }
+  });
+});
+
