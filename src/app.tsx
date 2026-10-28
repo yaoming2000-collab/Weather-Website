@@ -5,7 +5,7 @@ import type { Env } from './env';
 import { fallbackCoords, parseCoords, parseLatLonPair, visitorCoords, type Coords } from './geo/visitor';
 import { DROPPED_LANGS, isLang, resolveLanguage, type Lang } from './i18n/languages';
 import { HomePage, type PageProps } from './pages/home';
-import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage } from './pages/subpages';
+import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage, SettingsPage } from './pages/subpages';
 import { ClimatePage, RankingPage } from './pages/climate';
 import { DayPage, WeekPage } from './pages/day';
 import { LifePage } from './pages/life';
@@ -73,6 +73,15 @@ export function createApp(
       const channel = c.req.param('channel');
       const target = rest && rest !== '/' ? `/${channel}/en${rest}` : `/${channel}/`;
       return c.redirect(target + url.search, 301);
+    }
+    // 用户在设置页选过语言：从站外（锁屏、收藏夹、别人发的链接）打开别的语言的城市页时，换成他选的语言。
+    // 站内点击（同站 Referer）不换，用户可以照常看别的语言。设置页本身不换，否则改不了语言。
+    const preferred = preferredLang(c);
+    const rest = new URL(c.req.url).pathname.replace(/^\/[^/]+\/[^/]+/, '');
+    if (preferred && preferred !== lang && isLang(lang) && normalizeChannel(c.req.param('channel')) && rest.startsWith('/w/') && !sameSiteReferer(c)) {
+      const url = new URL(c.req.url);
+      c.header('Cache-Control', 'no-store');
+      return c.redirect(`/${c.req.param('channel')}/${preferred}${rest}${url.search}`, 302);
     }
     await next();
   });
@@ -206,6 +215,14 @@ export function createApp(
     return c.html(`<!doctype html>${html}`);
   });
 
+  app.get('/:channel/:lang/settings', async (c) => {
+    const target = parseTarget(c);
+    if (!target) return c.notFound();
+    const html = await (<SettingsPage channel={target.channel} lang={target.lang} providerName={c.var.weather.providerName} />).toString();
+    c.header('Cache-Control', 'public, max-age=300');
+    return c.html(`<!doctype html>${html}`);
+  });
+
   app.get('/:channel/:lang/cities', async (c) => {
     const target = parseTarget(c);
     if (!target) return c.notFound();
@@ -255,9 +272,29 @@ function query(c: C): URLSearchParams {
   return new URL(c.req.url).searchParams;
 }
 
+/** 跳转用的语言：用户在设置页选过的语言优先（Darren 2026-10-28），其次锁屏传来的 locale、lang 参数、浏览器语言 */
 function langOf(c: C): Lang {
   const q = query(c);
-  return resolveLanguage({ locale: q.get('locale'), lang: q.get('lang'), acceptLanguage: c.req.header('Accept-Language') });
+  return preferredLang(c) ?? resolveLanguage({ locale: q.get('locale'), lang: q.get('lang'), acceptLanguage: c.req.header('Accept-Language') });
+}
+
+/** 设置页写入的语言 Cookie（client/main.ts setupSettings） */
+export const LANG_COOKIE = 'wlang';
+
+function preferredLang(c: C): Lang | null {
+  const m = (c.req.header('Cookie') ?? '').match(new RegExp(`(?:^|;\\s*)${LANG_COOKIE}=([a-z]{2})(?:;|$)`));
+  return m && isLang(m[1]) ? (m[1] as Lang) : null;
+}
+
+/** 请求是不是从本站页面点进来的 */
+function sameSiteReferer(c: C): boolean {
+  const ref = c.req.header('Referer');
+  if (!ref) return false;
+  try {
+    return new URL(ref).host === new URL(c.req.url).host;
+  } catch {
+    return false;
+  }
 }
 
 function parseTarget(c: C): { channel: Channel; lang: Lang } | null {

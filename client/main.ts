@@ -141,68 +141,73 @@ function applyUnits(u: Units, root: ParentNode = document) {
       if (unit) unit.textContent = f.unit;
     }
   }
-  for (const b of $$('[data-units-toggle]')) b.textContent = u.temp === 'f' ? '°F' : '°C';
 }
 
 /**
  * 单位设置：点右上角 °C/°F 按钮弹出一个小面板，温度和风速分开选，选了立即生效并记住。
  */
-function setupUnits() {
-  let panel: HTMLElement | null = null;
-  const close = () => {
-    panel?.remove();
-    panel = null;
-    for (const b of $$('[data-units-toggle]')) b.setAttribute('aria-expanded', 'false');
-  };
-  const open = (button: HTMLElement) => {
-    close();
-    const u = currentUnits();
-    panel = el('div', { class: 'units-pop', role: 'dialog', 'aria-label': s('UnitsTitle') });
-    const group = (label: string, options: Array<[string, string]>, value: string, pick: (v: string) => void) => {
-      const row = el('div', { class: 'units-row' });
-      row.append(el('div', { class: 'units-label' }, label));
-      const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': label, dir: 'ltr' });
-      for (const [v, text] of options) {
-        const b = el('button', { type: 'button', role: 'radio', 'aria-checked': String(v === value) }, text);
-        b.addEventListener('click', () => {
-          pick(v);
-          for (const x of $$('[role="radio"]', seg)) x.setAttribute('aria-checked', String(x === b));
-        });
-        seg.append(b);
-      }
-      row.append(seg);
-      return row;
-    };
-    const update = (patch: Partial<Units>) => {
-      const next = { ...currentUnits(), ...patch };
-      saveUnits(next);
-      applyUnits(next);
-    };
-    panel.append(
-      group(s('TemperatureLabel'), [['c', '°C'], ['f', '°F']], u.temp, (v) => update({ temp: v as Units['temp'] })),
-      group(s('WindSpeedLabel'), [['kmh', 'km/h'], ['ms', 'm/s'], ['mph', 'mph']], u.wind, (v) => update({ wind: v as Units['wind'] })),
-    );
-    const r = button.getBoundingClientRect();
-    panel.style.top = `${Math.round(r.bottom + 8)}px`;
-    document.body.append(panel);
-    button.setAttribute('aria-expanded', 'true');
-    (panel.querySelector('[aria-checked="true"]') as HTMLElement | null)?.focus();
-  };
-  for (const b of $$('[data-units-toggle]')) {
-    b.setAttribute('aria-haspopup', 'dialog');
-    b.setAttribute('aria-expanded', 'false');
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (panel) close();
-      else open(b);
+/** 设置页写入的语言 Cookie：服务器跳转时优先用它（src/app.tsx preferredLang） */
+const LANG_COOKIE = 'wlang';
+/** 进入设置页之前的页面，"返回"时回去（换了语言就回到那一页的新语言版本） */
+const SETTINGS_RETURN_KEY = 'weather.settings.return';
+
+/**
+ * 设置页：温度 / 风速单位（存浏览器）、语言（存 Cookie，一年）。
+ * 单位改了立刻生效；语言点了就跳到那个语言的设置页。
+ */
+function setupSettings() {
+  if (data.page !== 'settings') return;
+  // 记住从哪一页进来（同站、不是设置页本身）
+  try {
+    const ref = document.referrer ? new URL(document.referrer) : null;
+    if (ref && ref.host === location.host && !/\/settings$/.test(ref.pathname)) sessionStorage.setItem(SETTINGS_RETURN_KEY, ref.pathname + ref.search);
+  } catch {
+    // sessionStorage 不可用时返回渠道首页
+  }
+
+  const u = currentUnits();
+  const groups: Array<[string, keyof Units, string]> = [
+    ['temp', 'temp', u.temp],
+    ['wind', 'wind', u.wind],
+  ];
+  for (const [name, field, value] of groups) {
+    const seg = document.querySelector<HTMLElement>(`[data-units-group="${name}"]`);
+    if (!seg) continue;
+    const buttons = $$<HTMLButtonElement>('[data-unit]', seg);
+    const mark = (v: string) => buttons.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.unit === v)));
+    mark(value);
+    for (const b of buttons) {
+      b.addEventListener('click', () => {
+        const next = { ...currentUnits(), [field]: b.dataset.unit } as Units;
+        saveUnits(next);
+        applyUnits(next);
+        mark(b.dataset.unit ?? '');
+      });
+    }
+  }
+
+  for (const a of $$<HTMLAnchorElement>('[data-lang-choice]')) {
+    a.addEventListener('click', () => {
+      const code = a.dataset.langChoice ?? '';
+      document.cookie = `${LANG_COOKIE}=${code}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
     });
   }
-  // pointerdown：iOS Safari 点在不可点击的区域时不一定触发 click
-  document.addEventListener('pointerdown', (e) => {
-    if (panel && !panel.contains(e.target as Node) && !(e.target as Element).closest?.('[data-units-toggle]')) close();
-  });
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && close());
-  addEventListener('scroll', close, { passive: true });
+
+  const back = document.querySelector<HTMLAnchorElement>('[data-settings-back]');
+  if (back) {
+    let target: string | null = null;
+    try {
+      target = sessionStorage.getItem(SETTINGS_RETURN_KEY);
+    } catch {
+      target = null;
+    }
+    // 网址是 /{渠道}/{语言}/...：换成当前语言
+    if (target && /^\/[^/]+\/[a-z]{2}\//.test(target)) {
+      back.setAttribute('href', withNav(target.replace(/^(\/[^/]+\/)[a-z]{2}\//, `$1${data.lang}/`)));
+    } else if (target) {
+      back.setAttribute('href', withNav(target));
+    }
+  }
 }
 
 // ---------- 3. 现在、今天、更新时间 ----------
@@ -675,7 +680,7 @@ function init() {
   applyUnits(currentUnits());
   applyTime();
 
-  setupUnits();
+  setupSettings();
 
   setupSaveButton();
   void migrateLegacy().then(() => {

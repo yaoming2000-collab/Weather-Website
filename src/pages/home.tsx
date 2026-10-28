@@ -25,6 +25,7 @@ import {
 import { shouldFetchNowcast, type CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
 import { AdSlot, DASH, Distance, EarlyTime, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
+import { raw } from 'hono/html';
 import { G } from './glyphs';
 import { isPlaceholder } from './placeholders';
 import { computeSky, displayIcon, type Sky } from './sky';
@@ -298,6 +299,9 @@ export function ClimateTag(props: { p: PageProps }) {
   );
 }
 
+const JUMP_SCRIPT = `(function(){try{var n=document.querySelectorAll('[data-jump]');var nav=n[n.length-1];var a=nav&&nav.querySelector('[aria-current]');if(!a)return;
+var r=a.getBoundingClientRect(),b=nav.getBoundingClientRect();nav.scrollLeft+=r.left+r.width/2-(b.left+b.width/2)}catch(e){}})()`;
+
 /** 今天、明天、后天、7 天的快捷入口；在子页里标出当前页 */
 export function Jump(props: { p: PageProps; active?: 'tomorrow' | 'day-after' | 'week' }) {
   const { p, active } = props;
@@ -317,16 +321,29 @@ export function Jump(props: { p: PageProps; active?: 'tomorrow' | 'day-after' | 
       </a>
     ) : null;
   const after = days[2];
+  // 7 天胶囊和其他胶囊一样：图标 + 这 7 天的最高 / 最低
+  const week = days.slice(0, 7);
+  const highs = week.map((d) => d.maxTemp).filter((v): v is number => v !== null);
+  const lows = week.map((d) => d.minTemp).filter((v): v is number => v !== null);
   return (
-    <nav class="jump">
-      {active ? pill(days[0], '', t(p.lang, 'TodayLabel')) : null}
-      {pill(days[1], 'tomorrow', t(p.lang, 'TomorrowLabel'))}
-      {pill(after, 'day-after', after ? <span data-weekday={after.date}>{weekdayLabel(after.date, intlLocale(p.lang), 'long')}</span> : '')}
-      <a data-nav href={cityPath(p.channel, p.lang, id, 'week')} {...cur('week')}>
-        <span>{t(p.lang, 'WeekOverview')}</span>
-        {G.chevron()}
-      </a>
-    </nav>
+    <>
+      <nav class="jump" data-jump>
+        {active ? pill(days[0], '', t(p.lang, 'TodayLabel')) : null}
+        {pill(days[1], 'tomorrow', t(p.lang, 'TomorrowLabel'))}
+        {pill(after, 'day-after', after ? <span data-weekday={after.date}>{weekdayLabel(after.date, intlLocale(p.lang), 'long')}</span> : '')}
+        <a data-nav href={cityPath(p.channel, p.lang, id, 'week')} {...cur('week')}>
+          <span>{t(p.lang, 'WeekOverview')}</span>
+          <span class="wk-ico">{G.calendar()}</span>
+          <span class="hl">
+            <Temp c={highs.length ? Math.max(...highs) : null} />
+            {' / '}
+            <Temp c={lows.length ? Math.min(...lows) : null} />
+          </span>
+        </a>
+      </nav>
+      {/* 选中的胶囊滚到可见位置（首次绘制前做，看不到滚动） */}
+      {active ? <script>{raw(JUMP_SCRIPT)}</script> : null}
+    </>
   );
 }
 
@@ -457,10 +474,10 @@ export function HomePage(p: PageProps) {
         <Nowcast f={features} lang={lang} fallback={nowcastFallback} />
       </div>
 
-      <a class="card" data-live="hourly" data-nav href={cityPath(channel, lang, loc.id, 'hourly')}>
-        <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} more={t(lang, 'SeeHourlyDetails')} />
+      <section class="card" data-live="hourly">
+        <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} more={t(lang, 'SeeHourlyDetails')} href={cityPath(channel, lang, loc.id, 'hourly')} />
         <HourlyStrip hours={(hourly?.data ?? []).slice(0, HOURS_SHOWN)} days={days} lang={lang} nowMs={p.nowMs} />
-      </a>
+      </section>
       <EarlyTime />
 
       <AdSlot slot="home_1" height={100} lang={lang} />

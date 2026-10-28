@@ -6,7 +6,7 @@ import type { AnomalyRecord, Ranking } from '../features/store';
 import { intlLocale, textDirection, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { cityPath, rankingPath } from '../routing/urls';
-import { AdSlot, DASH, Footer, Layout, Sec, SubBar, Temp } from './components';
+import { AdSlot, DASH, Footer, Layout, Sec, SettingsLink, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { cityPageData, Delta, devNote, pageSky, rich, type PageProps } from './home';
 
@@ -288,9 +288,7 @@ export function RankingPage(props: { ranking: Ranking; channel: Channel; lang: L
           </h1>
           <div class="region wrap">{t(lang, 'RankingSubtitle')}</div>
         </div>
-        <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(lang, 'UnitsTitle')}>
-          °C
-        </button>
+        <SettingsLink channel={channel} lang={lang} />
       </header>
       {empty ? (
         <section class="card">

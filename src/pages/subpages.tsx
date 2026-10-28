@@ -1,10 +1,10 @@
 import type { Channel } from '../config/channels';
 import { HOURS_SHOWN } from '../config/thresholds';
-import { intlLocale, type Lang } from '../i18n/languages';
+import { intlLocale, LANGUAGES, textDirection, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { hourLabel, weekdayLabel } from '../time/cityTime';
 import { aqiLevel, aqiPercent, conditionKey, tempRange, uvLevelKey, windDirText } from '../weather/derive';
-import { AdSlot, DASH, EarlyTime, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
+import { AdSlot, DASH, EarlyTime, Footer, Icon, Layout, Precip, Sec, SettingsLink, Speed, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { cityPageData, DayRow, devNote, pageSky, type PageProps } from './home';
 
@@ -194,6 +194,7 @@ export function CitiesPage(props: { channel: Channel; lang: Lang; providerName: 
             <span>{t(lang, 'MyCitiesTitle')}</span>
           </h1>
         </div>
+        <SettingsLink channel={channel} lang={lang} />
       </header>
       <form class="search" role="search" data-search>
         <input type="search" name="q" autocomplete="off" placeholder={t(lang, 'SearchCityWorldwidePlaceholder')} aria-label={t(lang, 'SearchCityWorldwidePlaceholder')} />
@@ -230,6 +231,75 @@ export function MessagePage(props: { lang: Lang; titleKey: string; textKey: stri
           </a>
         </div>
       </section>
+    </Layout>
+  );
+}
+
+/**
+ * 设置页 /{渠道}/{语言}/settings：语言、温度单位、风速单位。
+ * - 语言：点哪个就跳到那个语言的设置页，并写入 Cookie（wlang），以后从锁屏或其他站外链接进来时优先用它（Darren 2026-10-28）
+ * - 单位：存在浏览器里（和以前的单位面板同一份设置）
+ * - 返回：回到进入设置前的页面（换了语言就回到那一页的新语言版本），由浏览器脚本处理；没有脚本时回渠道首页
+ * 页面里不含个人信息，按语言缓存。
+ */
+export function SettingsPage(props: { channel: Channel; lang: Lang; providerName: string }) {
+  const { lang, channel } = props;
+  const seg = (name: string, options: Array<[string, string]>) => (
+    <div class="seg" role="radiogroup" data-units-group={name}>
+      {options.map(([value, label]) => (
+        <button type="button" role="radio" aria-checked="false" data-unit={value} dir="ltr">
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  return (
+    <Layout lang={lang} title={t(lang, 'SettingsTitle')} devNote={devNote(props.providerName)} pageData={{ channel, page: 'settings' }}>
+      <header class="top">
+        <div class="place">
+          <a class="back" data-nav data-settings-back href={`/${channel}/?lang=${lang}`}>
+            {G.back()}
+            <span>{t(lang, 'Back')}</span>
+          </a>
+          <h1>
+            <span>{t(lang, 'SettingsTitle')}</span>
+          </h1>
+        </div>
+      </header>
+
+      <section class="card settings">
+        <Sec icon={G.thermo()} title={t(lang, 'TemperatureLabel')} />
+        {seg('temp', [
+          ['c', '°C'],
+          ['f', '°F'],
+        ])}
+        <Sec icon={G.wind()} title={t(lang, 'WindSpeedLabel')} />
+        {seg('wind', [
+          ['kmh', 'km/h'],
+          ['ms', 'm/s'],
+          ['mph', 'mph'],
+        ])}
+      </section>
+
+      <section class="card settings">
+        <Sec icon={G.list()} title={t(lang, 'LanguageLabel')} />
+        <div class="langs">
+          {LANGUAGES.map((l) => (
+            <a
+              class="lang-row"
+              data-lang-choice={l.code}
+              href={`/${channel}/${l.code}/settings`}
+              lang={intlLocale(l.code)}
+              dir={textDirection(l.code)}
+              aria-current={l.code === lang ? 'true' : undefined}
+            >
+              <span>{l.name}</span>
+              {l.code === lang ? <span class="tick">✓</span> : null}
+            </a>
+          ))}
+        </div>
+      </section>
+      <Footer lang={lang} providerName={props.providerName} />
     </Layout>
   );
 }

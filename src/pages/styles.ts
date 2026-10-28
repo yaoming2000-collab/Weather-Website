@@ -170,20 +170,28 @@ body{--cl:255,255,255}
 .place h1{display:flex;align-items:center;gap:6px;margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
 .place h1 span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .place h1 svg{flex:none;width:18px;height:18px;opacity:.9}
+/* 城市主页：城市名放大，地区放在城市名右下（和城市名底部对齐）；放不下时换到下一行 */
+.city-head{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;row-gap:0}
+.city-head h1{font-size:28px;line-height:1.15;min-width:0;max-width:100%}
+.city-head h1 svg{width:20px;height:20px;align-self:center}
+.city-head .region{margin:0;font-size:15px;max-width:100%}
 .region{margin-top:1px;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .region.wrap{white-space:normal;overflow:visible}
 .btn{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:44px;height:44px;padding:0 11px;border-radius:999px;border:0;
   background:var(--chip);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
 .btn:active{background:rgba(255,255,255,.28)}
-/* 单位设置面板（点 °C/°F 按钮弹出） */
-.units-pop{position:fixed;inset-inline-end:12px;z-index:60;width:min(300px,calc(100vw - 24px));padding:14px;border-radius:var(--r-md);
-  background:rgba(14,28,58,.94);box-shadow:0 12px 32px rgba(0,0,0,.35);color:var(--fg);display:grid;gap:12px}
-.units-row{display:grid;gap:6px}
-.units-label{font-size:13px;color:var(--mut)}
 .seg{display:flex;gap:4px;padding:3px;border-radius:999px;background:rgba(255,255,255,.1)}
 .seg button{flex:1;min-height:36px;border:0;border-radius:999px;background:transparent;color:inherit;font:inherit;font-size:15px;font-weight:600}
 .seg button[aria-checked="true"]{background:#fff;color:#16305f}
 .seg button:focus-visible{outline:2px solid #ffd36b;outline-offset:1px}
+/* 设置页 */
+.settings .seg{margin:0 0 16px}.settings .seg:last-child{margin-bottom:0}
+.settings .seg button{min-height:44px}
+.langs{display:grid}
+.lang-row{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 2px;border-top:1px solid var(--line);font-size:16px}
+.lang-row:first-child{border-top:0}
+.lang-row[aria-current]{font-weight:650}
+.lang-row .tick{color:#ffd36b;font-weight:700}
 .btn svg{width:20px;height:20px}
 .btn[aria-pressed="true"] svg{fill:#ffd36b;stroke:#ffd36b}
 .back{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--mut);padding:12px 0;margin:-12px 0}
@@ -199,6 +207,7 @@ body{--cl:255,255,255}
 .jump img{width:24px;height:24px}
 .jump .hl{color:var(--mut);font-variant-numeric:tabular-nums}
 .jump .chev{width:14px;height:14px;opacity:.7}
+.jump .wk-ico{display:inline-flex}.jump .wk-ico svg{width:22px;height:22px;opacity:.9}
 
 /* ---------- 当前天气 ---------- */
 .hero{text-align:center;padding:26px 0 18px;text-shadow:0 1px 18px rgba(0,0,0,.12)}
@@ -227,6 +236,8 @@ body{--cl:255,255,255}
 .sec>span{min-width:0;overflow-wrap:anywhere;hyphens:auto}
 .sec .go{margin-inline-start:auto;display:inline-flex;align-items:center;gap:2px;font-weight:500;color:var(--fg);opacity:.92}
 .sec .go svg{width:14px;height:14px}
+/* 标题里的"查看更多"本身是链接时，点按区域扩到 44px 高，不改变布局 */
+.sec a.go{position:relative}.sec a.go::after{content:"";position:absolute;inset:-14px -8px}
 a.card:active,.tile:active{transform:scale(.99)}
 a.card,.tile{transition:transform .15s var(--ease)}
 
