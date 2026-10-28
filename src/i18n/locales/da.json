@@ -301,5 +301,11 @@
   "UnitsTitle": "Enheder",
   "TemperatureLabel": "Temperatur",
   "WindSpeedLabel": "Vindhastighed",
-  "PrecipTodayNote": "I dag {percent}% risiko for regn"
+  "PrecipTodayNote": "I dag {percent}% risiko for regn",
+  "Dash": "--",
+  "TryLater": "Disse data kan ikke hentes lige nu. Prøv igen om et par minutter.",
+  "Retry": "Prøv igen",
+  "UpdatedHoursAgo": "Opdateret for {n} t. siden",
+  "OfflineNotice": "Du er offline. Den senest gemte prognose vises.",
+  "StorageUnavailable": "Din browser gemmer ikke indstillinger, så gemte byer og enheder forsvinder, når du lukker siden."
 }

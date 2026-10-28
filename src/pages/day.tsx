@@ -6,8 +6,9 @@ import { cityPath } from '../routing/urls';
 import { weekdayLabel } from '../time/cityTime';
 import { conditionKey, tempRange, uvLevelKey, windDirText } from '../weather/derive';
 import type { DailyPoint } from '../weather/types';
-import { AdSlot, DASH, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
+import { AdSlot, DASH, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
 import { G } from './glyphs';
+import { placeholderDayHours } from './placeholders';
 import { cityPageData, Compass, DayRow, Delta, devNote, HourlyStrip, Jump, pageSky, rich, type PageProps } from './home';
 
 /** 日期："10月27日 星期二"之类，按语言格式化 */
@@ -57,7 +58,9 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
   const sub = p.offset === 1 ? 'tomorrow' : 'day-after';
   const title = p.offset === 1 ? t(lang, 'TomorrowLabel') : weekdayLabel(d?.date ?? bundle.today, intlLocale(lang), 'long');
   const point = features.series[p.offset];
-  const hours = (bundle.hourly?.data ?? []).filter((h) => d && h.time.startsWith(d.date));
+  const realHours = (bundle.hourly?.data ?? []).filter((h) => d && h.time.startsWith(d.date));
+  // 逐小时预报覆盖不到这一天时用占位小时，区块不消失
+  const hours = realHours.length > 0 || !d ? realHours : placeholderDayHours(d.date, loc.timezone);
   const uvKey = d ? uvLevelKey(d.uvIndex) : null;
 
   return (
@@ -91,13 +94,23 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
                 </span>
                 {G.chevron('flip')}
               </a>
-            ) : null}
+            ) : (
+              // 没有往年数据时保留同样大小的标签，页面不跳
+              <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style="--lv:var(--faint)">
+                <i />
+                <span>
+                  {t(lang, 'ClimateTitle')} {DASH}
+                </span>
+                {G.chevron('flip')}
+              </a>
+            )}
           </section>
+          <EarlyUnits />
 
-          {hours.length >= 3 ? (
+          {hours.length > 0 ? (
             <section class="card">
               <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} />
-              <HourlyStrip hours={hours} days={features.days} lang={lang} />
+              <HourlyStrip hours={hours} days={features.days} lang={lang} nowMs={p.nowMs} />
             </section>
           ) : null}
 
@@ -232,7 +245,8 @@ export function WeekPage(p: PageProps) {
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
   const avgHi = avg(withMax.map((d) => d.maxTemp!));
   const avgLo = avg(withMin.map((d) => d.minTemp!));
-  const rainy = week.filter((d) => (d.precipProb ?? 0) >= 50).length;
+  // 一天的降水概率都没有时显示 --，不显示 0 天
+  const rainy = week.some((d) => d.precipProb !== null) ? week.filter((d) => (d.precipProb ?? 0) >= 50).length : DASH;
   const total = week.reduce((a, d) => a + (d.precipAccum ?? 0), 0);
   const range = tempRange(week);
   const subFor = (i: number) => (i === 0 ? '' : i === 1 ? 'tomorrow' : i === 2 ? 'day-after' : null);
@@ -267,6 +281,7 @@ export function WeekPage(p: PageProps) {
           ) : null}
         </p>
       </section>
+      <EarlyUnits />
 
       <div class="grid">
         {[

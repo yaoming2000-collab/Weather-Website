@@ -123,7 +123,7 @@ describe('city page', () => {
 
   it('shows a dash instead of 0 when a value is missing', async () => {
     const html = await (await app().request(req('/wmi/en/w/100108410'))).text();
-    expect(html).toMatch(/Visibility<\/span><\/h3><div class="big"><span>—<\/span>/);
+    expect(html).toMatch(/Visibility<\/span><\/h3><div class="big"><span>--<\/span>/);
   });
 
   it('uses the old site translations', async () => {
@@ -339,7 +339,8 @@ describe('step 3 pages', () => {
     // 套餐不包含 / 城市没有往年数据是长期的，不算"缺数据"，页面照常缓存 5 分钟
     expect(homeRes.headers.get('X-Page-TTL')).toBe('300');
     const home = await homeRes.text();
-    expect(home).not.toContain('class="vs"');
+    // 标签位置保留，显示"--"，不让首屏高度变化
+    expect(home).toContain('style="--lv:var(--faint)"');
     const res = await a.request(req('/wmi/en/w/102643743/climate'));
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("We don&#39;t have long-term averages");
@@ -357,6 +358,73 @@ describe('step 3 pages', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('X-Page-TTL')).toBe('60');
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=0');
+  });
+
+  it('keeps every section in place with "--" when optional data is missing', async () => {
+    const flaky: WeatherProvider = new Proxy(new MockProvider(() => NOW), {
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver);
+        if (['hourly', 'daily', 'airQuality', 'climateDay', 'climateMonthly', 'nowcast'].includes(prop as string))
+          return () => Promise.reject(new ProviderError('down', 503));
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const a = app(flaky);
+    const home = await (await a.request(req('/wmi/en/w/102643743'))).text();
+    expect(home).toContain('data-nowcast="unavailable"');
+    expect(home).toContain('style="--lv:var(--faint)"');
+    expect(home.match(/class="hour" /g)?.length).toBeGreaterThanOrEqual(24);
+    expect(home.match(/class="day" /g)?.length).toBe(7);
+    for (const k of ['running', 'laundry', 'carwash', 'clothing', 'sunscreen']) expect(home).toContain(`/life/${k}"`);
+    expect(home).not.toMatch(/>0%</);
+
+    const tomorrow = await (await a.request(req('/wmi/en/w/102643743/tomorrow'))).text();
+    expect(tomorrow).toContain('class="hero day-hero"');
+    expect(tomorrow).not.toContain('>Now<');
+
+    const climate = await (await a.request(req('/wmi/en/w/102643743/climate'))).text();
+    expect(climate).toContain('Please try again in a few minutes');
+    expect(climate).toContain('class="ph-chart"');
+    expect(climate).toContain('data-slot="climate_1"');
+
+    const life = await (await a.request(req('/wmi/en/w/102643743/life/running'))).text();
+    expect(life).toContain('class="tl-bars"');
+    expect(life).not.toContain('class="good"');
+  });
+
+  it('does not claim "no rain" when rain is likely but the 15-minute data is not available', async () => {
+    const base = new MockProvider(() => NOW);
+    const noNowcast: WeatherProvider = new Proxy(base, {
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver);
+        if (prop === 'nowcast') return () => Promise.reject(new ProviderError('not in plan', 403));
+        if (prop === 'hourly')
+          return async (id: string, hours: number) => (await base.hourly(id, hours)).map((h) => ({ ...h, precipProb: 90 }));
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const home = await (await app(noNowcast).request(req('/wmi/en/w/102643743'))).text();
+    expect(home).toContain('data-nowcast="unavailable"');
+    expect(home.match(/class="hour" /g)?.length).toBeGreaterThanOrEqual(24);
+    expect(home).not.toContain('class="ico-ph');
+  });
+
+  it('error pages offer a retry and keep channel, language and session', async () => {
+    const down: WeatherProvider = new Proxy(new MockProvider(() => NOW), {
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === 'function' ? () => Promise.reject(new ProviderError('down', 503)) : v;
+      },
+    });
+    const html = await (await app(down).request(req('/wxiaomi/de/w/102643743?session=abc&foo=1'))).text();
+    expect(html).toContain('data-retry');
+    expect(html).toContain('href="/wxiaomi/?session=abc&amp;lang=de"');
+    // 路径里的语言优先于 locale 提示
+    const withLocale = await (await app(down).request(req('/wmi/de/w/102643743?locale=fr-FR'))).text();
+    expect(withLocale).toContain('href="/wmi/?lang=de"');
+    const notFound = await (await app().request(req('/wme/fr/w/999999'))).text();
+    expect(notFound).not.toContain('data-retry');
+    expect(notFound).toContain('href="/wme/?lang=fr"');
   });
 
   it('renders the ranking page with cities visitors opened', async () => {

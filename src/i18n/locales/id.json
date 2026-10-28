@@ -301,5 +301,11 @@
   "UnitsTitle": "Satuan",
   "TemperatureLabel": "Suhu",
   "WindSpeedLabel": "Kecepatan angin",
-  "PrecipTodayNote": "Hari ini, peluang hujan {percent}%"
+  "PrecipTodayNote": "Hari ini, peluang hujan {percent}%",
+  "Dash": "--",
+  "TryLater": "Data ini belum bisa dimuat saat ini. Coba lagi dalam beberapa menit.",
+  "Retry": "Coba lagi",
+  "UpdatedHoursAgo": "Diperbarui {n} jam lalu",
+  "OfflineNotice": "Anda sedang offline. Menampilkan prakiraan terakhir yang disimpan.",
+  "StorageUnavailable": "Browser Anda tidak menyimpan pengaturan, jadi kota tersimpan dan satuan akan hilang saat halaman ini ditutup."
 }

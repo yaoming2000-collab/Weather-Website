@@ -24,5 +24,7 @@ export function minutesAgo(fetchedAt: number, nowMs: number): number {
   return Math.max(0, Math.floor((nowMs - fetchedAt) / 60_000));
 }
 
+export { STALE_AFTER_MIN } from '../../src/config/thresholds';
+
 /** 当前天气数据超过此时长（毫秒）就在浏览器里补刷新，与服务器缓存时长一致 */
 export const REFRESH_AFTER_MS = 20 * 60_000;

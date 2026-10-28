@@ -6,7 +6,7 @@ import type { AnomalyRecord, Ranking } from '../features/store';
 import { intlLocale, textDirection, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { cityPath, rankingPath } from '../routing/urls';
-import { AdSlot, Footer, Layout, Sec, SubBar, Temp } from './components';
+import { AdSlot, DASH, Footer, Layout, Sec, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { cityPageData, Delta, devNote, pageSky, rich, type PageProps } from './home';
 
@@ -63,7 +63,8 @@ function Thermometer(props: { lang: Lang; avgMin: number | null; avgMax: number;
 /** 未来 15 天：预报最高温折线；灰色带是"和往年差不多"的范围（往年平均最高 ±2°） */
 function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
   const pts = props.series.filter((s) => s.maxTemp !== null && s.avgMaxTemp !== null);
-  if (pts.length < 3) return null;
+  // 数据不够时占同样高度，显示 --
+  if (pts.length < 3) return <div class="ph-chart">{DASH}</div>;
   const rtl = textDirection(props.lang) === 'rtl';
   const W = 340;
   const H = 150;
@@ -117,12 +118,12 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
         />
       ))}
       {[...extremes].map((i) => (
-        <text x={x(i).toFixed(1)} y={(y(pts[i]!.maxTemp!) - 8).toFixed(1)} text-anchor="middle" font-size="10.5" font-weight="600" fill="#fff">
+        <text x={x(i).toFixed(1)} y={(y(pts[i]!.maxTemp!) - 8).toFixed(1)} text-anchor="middle" font-size="13" font-weight="600" fill="#fff">
           <tspan data-c={String(pts[i]!.maxTemp)}>{Math.round(pts[i]!.maxTemp!)}</tspan>°
         </text>
       ))}
       {pts.map((s, i) => (
-        <text x={x(i).toFixed(1)} y="144" text-anchor="middle" font-size="9.5" fill="rgba(255,255,255,.6)">
+        <text x={x(i).toFixed(1)} y="145" text-anchor="middle" font-size="13" fill="rgba(255,255,255,.65)">
           {wd(s.date)}
         </text>
       ))}
@@ -139,6 +140,8 @@ export function ClimatePage(p: PageProps) {
   const color = cmp ? CLIMATE_LEVEL_COLORS[cmp.level] : '#fff';
   const rain = features.rain;
   const verdictTpl = cmp ? t(lang, `ClimateVerdict_${cmp.wording}`) : '';
+  // 往年数据或预报这次没取到（临时失败）→ 提示稍后再试；城市本来就没有往年数据 → 原来的说明
+  const transient = bundle.missing.some((m) => m === 'climate' || m === 'climateMonthly' || m === 'daily');
 
   return (
     <Layout lang={lang} title={`${title} · ${loc.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={{ ...cityPageData(p), page: 'climate' }}>
@@ -146,7 +149,7 @@ export function ClimatePage(p: PageProps) {
 
       {!cmp ? (
         <section class="card">
-          <p class="lead">{t(lang, 'ClimateUnavailable')}</p>
+          <p class="lead">{t(lang, transient ? 'TryLater' : 'ClimateUnavailable')}</p>
         </section>
       ) : (
         <>
@@ -197,48 +200,44 @@ export function ClimatePage(p: PageProps) {
           <noscript>
             <style>{'[data-reveal]{display:block!important}.guess .choices{display:none}'}</style>
           </noscript>
-
-          <AdSlot slot="climate_1" lang={lang} />
-
-          {features.series.length >= 3 ? (
-            <section class="card">
-              <Sec icon={G.calendar()} title={t(lang, 'ClimateChartTitle')} />
-              <SeriesChart series={features.series} lang={lang} />
-              <div class="legend">
-                <span>
-                  <i class="sw line" />
-                  {t(lang, 'ClimateForecastHigh')}
-                </span>
-                <span>
-                  <i class="sw usual" />
-                  {t(lang, 'ClimateNormalBand')}
-                </span>
-              </div>
-            </section>
-          ) : null}
-
-          {rain ? (
-            <section class="card">
-              <Sec icon={G.umbrella()} title={t(lang, 'ClimateRainTitle')} />
-              <div class="cmp-bars">
-                <div>
-                  <span>{t(lang, 'ClimateRainUsual')}</span>
-                  <i style={`width:${((rain.usualRainyDays / rain.days) * 100).toFixed(1)}%`} class="usual" />
-                  <b>{rain.usualRainyDays}</b>
-                </div>
-                <div>
-                  <span>{t(lang, 'ClimateRainForecast')}</span>
-                  <i style={`width:${((rain.forecastRainyDays / rain.days) * 100).toFixed(1)}%`} />
-                  <b>{rain.forecastRainyDays}</b>
-                </div>
-              </div>
-              <p class="note">{t(lang, 'ClimateRainCompare', { usual: rain.usualRainyDays, days: rain.days, forecast: rain.forecastRainyDays })}</p>
-            </section>
-          ) : null}
-
-          <AdSlot slot="climate_2" lang={lang} />
         </>
       )}
+
+      <AdSlot slot="climate_1" lang={lang} />
+
+      <section class="card">
+        <Sec icon={G.calendar()} title={t(lang, 'ClimateChartTitle')} />
+        <SeriesChart series={features.series} lang={lang} />
+        <div class="legend">
+          <span>
+            <i class="sw line" />
+            {t(lang, 'ClimateForecastHigh')}
+          </span>
+          <span>
+            <i class="sw usual" />
+            {t(lang, 'ClimateNormalBand')}
+          </span>
+        </div>
+      </section>
+
+      <section class="card">
+        <Sec icon={G.umbrella()} title={t(lang, 'ClimateRainTitle')} />
+        <div class="cmp-bars">
+          <div>
+            <span>{t(lang, 'ClimateRainUsual')}</span>
+            {rain ? <i style={`width:${((rain.usualRainyDays / rain.days) * 100).toFixed(1)}%`} class="usual" /> : <i class="usual ph" />}
+            <b>{rain ? rain.usualRainyDays : DASH}</b>
+          </div>
+          <div>
+            <span>{t(lang, 'ClimateRainForecast')}</span>
+            {rain ? <i style={`width:${((rain.forecastRainyDays / rain.days) * 100).toFixed(1)}%`} /> : <i class="ph" />}
+            <b>{rain ? rain.forecastRainyDays : DASH}</b>
+          </div>
+        </div>
+        <p class="note">{rain ? t(lang, 'ClimateRainCompare', { usual: rain.usualRainyDays, days: rain.days, forecast: rain.forecastRainyDays }) : DASH}</p>
+      </section>
+
+      <AdSlot slot="climate_2" lang={lang} />
 
       <p class="base-note">{t(lang, 'ClimateBaseline')}</p>
       <Footer lang={lang} providerName={p.providerName} />

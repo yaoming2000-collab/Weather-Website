@@ -301,5 +301,11 @@
   "UnitsTitle": "Yksiköt",
   "TemperatureLabel": "Lämpötila",
   "WindSpeedLabel": "Tuulen nopeus",
-  "PrecipTodayNote": "Tänään sateen todennäköisyys {percent}%"
+  "PrecipTodayNote": "Tänään sateen todennäköisyys {percent}%",
+  "Dash": "--",
+  "TryLater": "Näitä tietoja ei juuri nyt voi ladata. Yritä uudelleen muutaman minuutin kuluttua.",
+  "Retry": "Yritä uudelleen",
+  "UpdatedHoursAgo": "Päivitetty {n} t sitten",
+  "OfflineNotice": "Olet offline-tilassa. Näytetään viimeksi tallennettu ennuste.",
+  "StorageUnavailable": "Selaimesi ei tallenna asetuksia, joten tallennetut kaupungit ja yksiköt katoavat, kun suljet sivun."
 }

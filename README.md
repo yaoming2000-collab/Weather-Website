@@ -12,7 +12,8 @@
 | 3a | 往年对比、猜一猜计数、排行榜、降雨时间轴、生活指数的**计算规则和接口**（不含界面） | ✅ PR #3 |
 | 3b | 新视觉（随时间和天气变化的天空）、明天/后天/7 天页、往年对比页（猜一猜、分享卡片）、排行榜、生活指数页、"预报准吗" | ✅ PR #4 |
 | — | 缓存和数据获取修正、调用统计 | ✅ PR #5、#6 |
-| 4 | 28 种语言文案（去掉希伯来语，新增保加利亚语、罗马尼亚语）、城市名本地化、阿拉伯语排版、温度和风速单位分开设置、定位失败时用所在国首都 | ✅ 本分支 |
+| 4 | 28 种语言文案（去掉希伯来语，新增保加利亚语、罗马尼亚语）、城市名本地化、阿拉伯语排版、温度和风速单位分开设置、定位失败时用所在国首都 | ✅ PR #7 |
+| 4b | 手机端细节：缺数据显示 "--" 不隐藏区块、出错重试和离线兜底、Core Web Vitals、点按区域 ≥ 44px | ✅ 本分支 |
 | 5 | 广告：Darren 自己接入代码，新站只保留广告位占位（`data-slot`） | — |
 | 6 | 部署说明、验收 | 待开始 |
 
@@ -156,6 +157,28 @@ npx wrangler deploy
 - 地点接口返回的英文国家名写法，用于判断雷达覆盖（`src/config/radar.ts`）
 - 日预报 `dataset=full` 是否包含日出日落等字段
 
+## 缺数据和出错时的表现
+
+原则（Darren 2026-10-28）：区块一律保留，没有的数值显示 `--`（不显示 0），页面高度不因数据有无而变化。
+
+| 情况 | 页面表现 |
+| --- | --- |
+| 逐小时 / 每日预报没取到 | 用占位数据（`src/pages/placeholders.ts`）：图标位留空，数值 `--`；页面只缓存 60 秒 |
+| 降雨时间轴 | 一直显示：没去请求时"未来 2 小时无雨"，取不到时"暂无数据" |
+| 往年数据 | 首页标签显示"今天 vs 往年 --"；往年对比页区分"暂时取不到，请稍后再试"和"该城市没有长期数据"，图表和降雨对比保留位置 |
+| 当前天气取不到（整页 503） | 出错页：重试按钮，10 秒后自动重试一次；回首页保留渠道、语言、session |
+| 数据是旧的（接口故障时用了 6 小时内的旧数据） | "N 小时前更新"，超过 1 小时显示黄色 |
+| 断网 / 服务器 5xx | Service Worker（`public/sw.js`）显示该城市上次看过的页面，底部提示"当前没有网络" |
+| 浏览器不能保存设置（隐私模式等） | 收藏或改单位时提示一次 |
+
+**Service Worker 紧急关闭**：把 `client/main.ts` 里的 `SERVICE_WORKER_ENABLED` 改成 `false` 再部署，
+已经安装的会在用户下次打开页面时注销。副本只在 12 小时内有效，超过就不用。
+
+## 天气图标
+
+`public/img/weather/*.png` 是原图（320 像素）。页面用 128、256 像素的 WebP（`srcset`，浏览器按屏幕密度选）。
+原图有改动时运行 `python3 scripts/icons-webp.py` 重新生成（需要 Pillow）。
+
 ## 广告位
 
 广告代码由 Darren 接入。每个广告位是一个带 `data-slot` 的占位元素（`src/pages/components.tsx` 的 `AdSlot`），
@@ -177,4 +200,8 @@ npx wrangler deploy
 - `forecast_feedback`（预报准吗）：参数 `city_id`、`value`（`up` / `down`）
 - `climate_share`（往年对比分享）：参数 `city_id`、`method`（`shared` / `downloaded`）
 
+- `web_vitals`（Core Web Vitals 真实用户数据，`client/vitals.ts`）：参数 `metric_name`（LCP / INP / CLS / FCP / TTFB）、
+  `metric_value`（毫秒；CLS 乘以 1000）、`metric_rating`（good / needs-improvement / poor）、`page_type`
+
 页面上有 `gtag` 时直接发送；没有时写入 `window.dataLayer`。
+GA4 里要按指标看分布，需要在"自定义定义"里把 `metric_name`、`metric_rating`、`page_type` 注册为维度，`metric_value` 注册为指标。

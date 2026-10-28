@@ -9,8 +9,9 @@ import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage } from './pages
 import { ClimatePage, RankingPage } from './pages/climate';
 import { DayPage, WeekPage } from './pages/day';
 import { LifePage } from './pages/life';
+import { withPlaceholders } from './pages/placeholders';
 import { isLifeIndexKey, type LifeIndexKey } from './features/life';
-import { citiesPath, cityPath, pageCacheKey, withNavParams } from './routing/urls';
+import { citiesPath, cityPath, pageCacheKey, pickNavParams, withNavParams } from './routing/urls';
 import { RANKING } from './config/features';
 import { GUESS_CHOICES, type GuessChoice } from './features/climate';
 import { anomalyRecord, cityFeatures } from './features';
@@ -268,7 +269,14 @@ function parseTarget(c: C): { channel: Channel; lang: Lang } | null {
 
 async function message(c: C, status: 404 | 500 | 503, titleKey: string, textKey: string) {
   const lang = isLang(c.req.param('lang')) ? (c.req.param('lang') as Lang) : langOf(c);
-  const html = await (<MessagePage lang={lang} titleKey={titleKey} textKey={textKey} />).toString();
+  // 回首页的链接保留渠道、语言和 session 等参数（首页会按位置跳到城市页）
+  const channel = normalizeChannel(c.req.param('channel')) ?? DEFAULT_CHANNEL;
+  const params = pickNavParams(query(c));
+  // 网址路径里已经有语言时以它为准（locale 是首次打开时的提示，用户可能已经换了语言）
+  if (isLang(c.req.param('lang'))) params.delete('locale');
+  if (!params.has('locale')) params.set('lang', lang);
+  const homeHref = `/${channel}/?${params.toString()}`;
+  const html = await (<MessagePage lang={lang} titleKey={titleKey} textKey={textKey} homeHref={homeHref} retry={status !== 404} />).toString();
   return new Response(`<!doctype html>${html}`, {
     status,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' },
@@ -401,7 +409,9 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
     // 排行榜存英文名（显示时再按页面语言换），所以用原始的地点信息
     const record = anomalyRecord(raw, features.comparison, now);
     if (record) waitUntil(c, c.var.features.recordAnomaly(record).catch((e) => console.warn('[ranking] record failed', e)));
-    const props: PageProps = { bundle, features, channel, lang, providerName: c.var.weather.providerName, nowMs: now };
+    // 页面显示用：缺的逐小时、每日预报、生活指数补占位（显示 "--"），区块不隐藏
+    const view = withPlaceholders(bundle, features, now);
+    const props: PageProps = { bundle: view.bundle, features: view.features, channel, lang, providerName: c.var.weather.providerName, nowMs: now };
     let html: string;
     if (sub?.startsWith('life/')) {
       html = await (<LifePage {...props} indexKey={sub.slice(5) as LifeIndexKey} />).toString();

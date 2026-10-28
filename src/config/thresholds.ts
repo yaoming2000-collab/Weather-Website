@@ -90,3 +90,6 @@ export const PARTIAL_PAGE_TTL = 60;
 
 /** 访客位置拿不到时使用的默认位置（伦敦）。 */
 export const FALLBACK_COORDS = { lat: 51.5074, lon: -0.1278 } as const;
+
+/** 当前天气超过这么多分钟没更新（接口故障时用的是旧数据），"N 小时前更新"显示成警示色 */
+export const STALE_AFTER_MIN = 60;

@@ -2,7 +2,7 @@
  * 浏览器端脚本（Vite 打包为 public/static/app.js）。
  * 页面主体由服务器生成并被 CDN 缓存；这里只处理因人而异、因时而异的部分。
  */
-import { iconImage } from '../src/weather/icons';
+import { iconImage, iconSrcset } from '../src/weather/icons';
 import { normalizeSearch, searchLongEnough } from '../src/weather/search';
 import {
   addCity,
@@ -19,8 +19,10 @@ import {
   type SavedCity,
 } from './lib/saved';
 import { entryKey, GUESS_KEY, isChoice, percentRight, readBook, VOTE_KEY, writeBook, type Choice, type Counts } from './lib/interact';
-import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS } from './lib/time';
+import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS, STALE_AFTER_MIN } from './lib/time';
 import { drawCard, shareOrDownload } from './share';
+import { reportWebVitals } from './vitals';
+import { UNITS_KEY, UNITS_KEY_LEGACY } from '../src/config/units';
 import { defaultUnits, formatDistance, formatPrecip, formatSpeed, formatTemp, formatTempDelta, fromLegacy, parseUnits, type Units } from './lib/units';
 
 interface PageData {
@@ -48,7 +50,48 @@ const s = (key: string, vars?: Record<string, string | number>): string => {
   return v;
 };
 
+/** "刚刚更新" / "N 分钟前更新" / "N 小时前更新" */
+function updatedText(mins: number): string {
+  if (mins < 1) return s('UpdatedJustNow');
+  if (mins < 60) return s('UpdatedMinutesAgo', { n: mins });
+  return s('UpdatedHoursAgo', { n: Math.floor(mins / 60) });
+}
+
 const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll<T>(sel)) as T[];
+
+/**
+ * 页面底部的提示条。persist=true 时一直显示，直到用 hideNotice 关掉（如离线提示）；
+ * 否则几秒后自动消失。同一时间只显示一条。
+ */
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+function notice(key: string, persist = false) {
+  let el = document.getElementById('notice');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'notice';
+    el.className = 'notice';
+    el.setAttribute('role', 'status');
+    document.body.appendChild(el);
+  }
+  el.textContent = s(key);
+  el.dataset.key = key;
+  el.hidden = false;
+  clearTimeout(noticeTimer);
+  if (!persist) noticeTimer = setTimeout(() => hideNotice(key), 4000);
+}
+function hideNotice(key: string) {
+  const el = document.getElementById('notice');
+  if (el && el.dataset.key === key) el.hidden = true;
+}
+
+/** 本地存储不可用时提醒一次：收藏和单位设置关掉页面后不会保留 */
+let storageWarned = false;
+function stored(ok: boolean) {
+  if (!ok && !storageWarned) {
+    storageWarned = true;
+    notice('StorageUnavailable');
+  }
+}
 
 // ---------- 1. 站内链接带上 session / uid / locale ----------
 
@@ -70,10 +113,6 @@ function syncNav(root: ParentNode = document) {
 
 // ---------- 2. 单位 ----------
 
-/** 旧版设置（metric / imperial），读一次后迁移到新键 */
-const UNITS_KEY_LEGACY = 'weather.units';
-const UNITS_KEY = 'weather.units.v2';
-
 function currentUnits(): Units {
   const saved = parseUnits(storage.get(UNITS_KEY));
   if (saved) return saved;
@@ -82,7 +121,7 @@ function currentUnits(): Units {
 }
 
 function saveUnits(u: Units) {
-  storage.set(UNITS_KEY, JSON.stringify(u));
+  stored(storage.set(UNITS_KEY, JSON.stringify(u)));
 }
 
 function applyUnits(u: Units, root: ParentNode = document) {
@@ -188,9 +227,11 @@ function applyTime() {
     const past = pastHourCount(list.map((el) => el.dataset.time ?? ''), now);
     list.forEach((el, i) => {
       el.hidden = i < past;
-      el.toggleAttribute('data-now', i === past);
+      // 明天、后天页面的第一格还没开始，不能叫"现在"
+      const isNow = i === past && Date.parse(el.dataset.time ?? '') <= now;
+      el.toggleAttribute('data-now', isNow);
       const label = el.querySelector<HTMLElement>('[data-hour-label]');
-      if (label) label.textContent = i === past ? s('NowLabel') : label.dataset.hourLabel ?? '';
+      if (label) label.textContent = isNow ? s('NowLabel') : label.dataset.hourLabel ?? '';
     });
     // 日出日落：早于"现在"那一格的隐藏（它们的时间是当地时间，没有时差，按字符串比较）
     const first = list[past]?.dataset.time?.slice(0, 16);
@@ -199,7 +240,9 @@ function applyTime() {
 
   for (const el of $$('[data-fetched]')) {
     const mins = minutesAgo(Number(el.dataset.fetched), now);
-    el.textContent = mins < 1 ? s('UpdatedJustNow') : s('UpdatedMinutesAgo', { n: mins });
+    el.textContent = updatedText(mins);
+    // 超过 1 小时没更新（接口故障时用的是旧数据）用醒目颜色提示
+    el.classList.toggle('stale', mins > STALE_AFTER_MIN);
   }
 }
 
@@ -258,7 +301,7 @@ function loadCities(): SavedCity[] {
 }
 
 function saveCities(list: SavedCity[]) {
-  storage.set(STORAGE_KEY, JSON.stringify(list));
+  stored(storage.set(STORAGE_KEY, JSON.stringify(list)));
 }
 
 /** 把旧站保存的城市迁移过来（只做一次；旧数据不删除） */
@@ -330,7 +373,7 @@ interface Card {
 function cityRow(c: Card, onRemove?: () => void): HTMLElement {
   const row = el('div', { class: 'city' });
   const a = el('a', { href: cityHref(c.id) });
-  if (c.icon) a.append(el('img', { src: `/img/weather/${iconImage(c.icon)}`, alt: '', width: '40', height: '40' }));
+  if (c.icon) a.append(el('img', { src: `/img/weather/${iconImage(c.icon)}`, srcset: iconSrcset(c.icon), sizes: '40px', alt: '', width: '40', height: '40' }));
   const n = el('div', { class: 'n' });
   n.append(el('div', {}, c.name), el('div', { class: 'sub' }, [c.admin, c.country].filter(Boolean).join(', ')));
   a.append(n);
@@ -570,6 +613,61 @@ function setupSkyIdle() {
   wake();
 }
 
+// ---------- 离线、出错重试 ----------
+
+/** 离线时显示提示；恢复网络后自动更新当前天气 */
+function setupOffline() {
+  const update = () => {
+    if (navigator.onLine === false) notice('OfflineNotice', true);
+    else {
+      hideNotice('OfflineNotice');
+      void refreshLive();
+    }
+  };
+  addEventListener('offline', update);
+  addEventListener('online', update);
+  if (navigator.onLine === false) notice('OfflineNotice', true);
+}
+
+/** 出错页：重试按钮；页面打开 10 秒后自动重试一次（用 #retried 记住，不会一直刷新） */
+function setupRetry() {
+  const btn = document.querySelector<HTMLButtonElement>('[data-retry]');
+  if (!btn) {
+    // 自动重试成功后去掉网址里的 #retried
+    if (location.hash === '#retried') history.replaceState(history.state, '', location.pathname + location.search);
+    return;
+  }
+  btn.addEventListener('click', () => location.reload());
+  if (location.hash !== '#retried') {
+    setTimeout(() => {
+      if (navigator.onLine === false) return;
+      // replaceState 不新增历史记录，返回键不会被困在出错页
+      history.replaceState(history.state, '', '#retried');
+      location.reload();
+    }, 10_000);
+  }
+}
+
+/**
+ * Service Worker：没有网络时打开最近看过的城市页（见 public/sw.js）；页面加载完再注册，不影响首屏。
+ * 紧急关闭：改成 false 并部署，已经安装的会在用户下次打开页面时注销。
+ */
+const SERVICE_WORKER_ENABLED = true;
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (!SERVICE_WORKER_ENABLED) {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((rs) => rs.forEach((r) => void r.unregister()))
+      .catch(() => undefined);
+    return;
+  }
+  const go = () => navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+  if (document.readyState === 'complete') go();
+  else addEventListener('load', go, { once: true });
+}
+
 // ---------- 启动 ----------
 
 function init() {
@@ -593,6 +691,10 @@ function init() {
   setupVote();
   setupShare();
   setupSkyIdle();
+  setupOffline();
+  setupRetry();
+  registerServiceWorker();
+  reportWebVitals(data.page ?? 'home');
 
   void refreshLive();
   setInterval(applyTime, 60_000);

@@ -4,7 +4,7 @@ import { intlLocale, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { hourLabel, weekdayLabel } from '../time/cityTime';
 import { aqiLevel, aqiPercent, conditionKey, tempRange, uvLevelKey, windDirText } from '../weather/derive';
-import { AdSlot, DASH, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
+import { AdSlot, DASH, EarlyTime, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { cityPageData, DayRow, devNote, pageSky, type PageProps } from './home';
 
@@ -16,8 +16,10 @@ export function HourlyPage(p: PageProps) {
   const hours = bundle.hourly?.data ?? [];
   const title = t(lang, 'Next24Hours');
   const row = (h: (typeof hours)[number], i: number) => (
-    <div class="row" data-time={h.time}>
-      <span>{i === 0 ? t(lang, 'NowLabel') : <bdi>{hourLabel(h.time)}</bdi>}</span>
+    <div class="row" data-time={h.time} data-now={i === 0 && Date.parse(h.time) <= p.nowMs ? '' : undefined}>
+      <span>
+        <bdi data-hour-label={hourLabel(h.time)}>{i === 0 && Date.parse(h.time) <= p.nowMs ? t(lang, 'NowLabel') : hourLabel(h.time)}</bdi>
+      </span>
       <Icon icon={h.icon} size={32} />
       <div class="main">
         <div>{t(lang, conditionKey(h.icon))}</div>
@@ -33,7 +35,10 @@ export function HourlyPage(p: PageProps) {
   return (
     <Layout lang={lang} title={`${title} · ${bundle.location.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={cityPageData(p)}>
       <SubBar location={bundle.location} channel={channel} lang={lang} title={title} />
-      <section class="card">{hours.slice(0, 12).map(row)}</section>
+      <section class="card" data-now-label={t(lang, 'NowLabel')}>
+        {hours.slice(0, 12).map(row)}
+      </section>
+      <EarlyTime />
       <AdSlot slot="sub_1" lang={lang} />
       <section class="card">{hours.slice(12, HOURS_SHOWN).map((h, i) => row(h, i + 12))}</section>
       <AdSlot slot="sub_2" lang={lang} />
@@ -203,16 +208,27 @@ export function CitiesPage(props: { channel: Channel; lang: Lang; providerName: 
   );
 }
 
-export function MessagePage(props: { lang: Lang; titleKey: string; textKey: string }) {
+/**
+ * 出错页（找不到、服务暂时不可用）。
+ * homeHref 保留渠道、语言和 session 等参数；retry 时显示"重试"按钮，10 秒后自动重试一次（client/main.ts）。
+ */
+export function MessagePage(props: { lang: Lang; titleKey: string; textKey: string; homeHref: string; retry: boolean }) {
   const { lang } = props;
   return (
-    <Layout lang={lang} title={t(lang, props.titleKey)} pageData={{}}>
+    <Layout lang={lang} title={t(lang, props.titleKey)} pageData={{ page: 'message' }}>
       <section class="msg">
         <h1>{t(lang, props.titleKey)}</h1>
         <p style="color:var(--mut)">{t(lang, props.textKey)}</p>
-        <a class="btn" href="/">
-          {t(lang, 'BackToHome')}
-        </a>
+        <div class="msg-actions">
+          {props.retry ? (
+            <button type="button" class="btn" data-retry>
+              {t(lang, 'Retry')}
+            </button>
+          ) : null}
+          <a class={props.retry ? 'btn ghost' : 'btn'} href={props.homeHref}>
+            {t(lang, 'BackToHome')}
+          </a>
+        </div>
       </section>
     </Layout>
   );

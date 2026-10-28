@@ -109,6 +109,8 @@ export function tempRange(days: Array<{ minTemp: number | null; maxTemp: number 
 
 /** 图标 key → 天气描述文案 key（夜间沿用白天描述，晴夜为 "Clear"） */
 export function conditionKey(icon: string): string {
+  // 占位（没有数据）：显示 "--"
+  if (!icon) return 'Dash';
   if (icon === 'night') return 'Cond_night';
   return `Cond_${icon.replace(/^night-/, '')}`;
 }

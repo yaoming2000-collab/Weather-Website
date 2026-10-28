@@ -301,5 +301,11 @@
   "UnitsTitle": "Units",
   "TemperatureLabel": "Temperature",
   "WindSpeedLabel": "Wind speed",
-  "PrecipTodayNote": "Today, {percent}% chance of rain"
+  "PrecipTodayNote": "Today, {percent}% chance of rain",
+  "Dash": "--",
+  "TryLater": "Couldn't load this data right now. Please try again in a few minutes.",
+  "Retry": "Try again",
+  "UpdatedHoursAgo": "Updated {n} h ago",
+  "OfflineNotice": "You're offline. Showing the last saved forecast.",
+  "StorageUnavailable": "Your browser isn't saving settings, so saved cities and units will be lost when you close this page."
 }

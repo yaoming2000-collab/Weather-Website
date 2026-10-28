@@ -301,5 +301,11 @@
   "UnitsTitle": "单位",
   "TemperatureLabel": "温度",
   "WindSpeedLabel": "风速",
-  "PrecipTodayNote": "今天降雨概率 {percent}%"
+  "PrecipTodayNote": "今天降雨概率 {percent}%",
+  "Dash": "--",
+  "TryLater": "暂时无法获取这部分数据，请过几分钟再试。",
+  "Retry": "重试",
+  "UpdatedHoursAgo": "{n} 小时前更新",
+  "OfflineNotice": "当前没有网络，显示的是上次保存的预报。",
+  "StorageUnavailable": "浏览器无法保存设置，关闭页面后收藏的城市和单位设置不会保留。"
 }

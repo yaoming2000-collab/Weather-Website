@@ -100,11 +100,13 @@ export const storage = {
       return null;
     }
   },
-  set(key: string, value: string): void {
+  /** 存不进去（隐私模式、存储已满、被禁用）时返回 false，由调用方提示用户 */
+  set(key: string, value: string): boolean {
     try {
       localStorage.setItem(key, value);
+      return true;
     } catch {
-      // 忽略：存不进去只影响收藏功能
+      return false;
     }
   },
 };

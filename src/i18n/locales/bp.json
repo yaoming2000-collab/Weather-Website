@@ -301,5 +301,11 @@
   "UnitsTitle": "Unidades",
   "TemperatureLabel": "Temperatura",
   "WindSpeedLabel": "Velocidade do vento",
-  "PrecipTodayNote": "Hoje, {percent}% de chance de chuva"
+  "PrecipTodayNote": "Hoje, {percent}% de chance de chuva",
+  "Dash": "--",
+  "TryLater": "Não foi possível carregar esses dados agora. Tente novamente em alguns minutos.",
+  "Retry": "Tentar novamente",
+  "UpdatedHoursAgo": "Atualizado há {n} h",
+  "OfflineNotice": "Você está offline. Mostrando a última previsão salva.",
+  "StorageUnavailable": "Seu navegador não está salvando configurações: as cidades salvas e as unidades serão perdidas ao fechar esta página."
 }
