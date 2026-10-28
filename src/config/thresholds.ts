@@ -34,6 +34,8 @@ const DAY = 24 * HOUR;
  */
 export const DATA_TTL = {
   location: 30 * DAY,
+  /** Wikidata 的城市名（日语、阿拉伯语等 9 种语言），很少变化 */
+  placeNames: 90 * DAY,
   current: 20 * MINUTE,
   hourly: 1 * HOUR,
   /** 另外在城市当地午夜过期（否则过了午夜"今天"还是昨天，15 天预报只剩 14 天） */

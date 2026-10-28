@@ -369,7 +369,7 @@ async function renderSavedList() {
   };
   draw(list);
   try {
-    const res = await fetch(`/api/cities?ids=${list.map((c) => encodeURIComponent(c.id)).join(',')}`);
+    const res = await fetch(`/api/cities?ids=${list.map((c) => encodeURIComponent(c.id)).join(',')}&lang=${encodeURIComponent(data.lang)}`);
     if (!res.ok) return;
     const { items } = (await res.json()) as { items: Card[] };
     draw(list.map((c) => ({ ...c, ...items.find((i) => i.id === c.id), name: c.name })));

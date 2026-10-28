@@ -167,6 +167,22 @@ describe('city page', () => {
     expect(home.headers.get('Location')).toMatch(/^\/wmi\/en\/w\//);
   });
 
+  it('shows the city name in the page language, but keeps English names for the ranking', async () => {
+    const names = { lookup: async (ids: string[]) => new Map(ids.filter((i) => i === '102643743').map((i) => [i, { labels: { ja: 'ロンドン' }, iso: 'GB' }])) };
+    const features = new MemoryFeatureStore();
+    const a = createApp({
+      weather: () => new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, names),
+      features: () => features,
+    });
+    const html = await (await a.request(req('/wmi/ja/w/102643743'))).text();
+    expect(html).toContain('<span>ロンドン</span>');
+    expect(html).toContain('イギリス');
+    const ranking = await features.ranking(NOW);
+    expect([...ranking.warmest, ...ranking.coldest].map((r) => r.name)).toEqual(['London']);
+    const page = await (await a.request(req('/wmi/ja/ranking'))).text();
+    expect(page).toContain('ロンドン');
+  });
+
   it('sets right-to-left for Arabic', async () => {
     const html = await (await app().request(req('/wmi/ar/w/100108410'))).text();
     expect(html).toContain('dir="rtl"');
