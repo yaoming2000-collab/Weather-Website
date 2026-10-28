@@ -1,5 +1,6 @@
 import type { Lang } from './languages';
 import ar from './locales/ar.json';
+import bg from './locales/bg.json';
 import bp from './locales/bp.json';
 import da from './locales/da.json';
 import de from './locales/de.json';
@@ -18,6 +19,7 @@ import nl from './locales/nl.json';
 import no from './locales/no.json';
 import pl from './locales/pl.json';
 import pt from './locales/pt.json';
+import ro from './locales/ro.json';
 import ru from './locales/ru.json';
 import sv from './locales/sv.json';
 import th from './locales/th.json';
@@ -32,7 +34,7 @@ import zh from './locales/zh.json';
  */
 export type Messages = Record<string, string>;
 
-const CATALOG: Record<Lang, Messages> = { ar, bp, da, de, el, en, es, fi, fr, hi, id, it, ja, ko, lm, nl, no, pl, pt, ru, sv, th, tr, uk, vi, zh };
+const CATALOG: Record<Lang, Messages> = { ar, bg, bp, da, de, el, en, es, fi, fr, hi, id, it, ja, ko, lm, nl, no, pl, pt, ro, ru, sv, th, tr, uk, vi, zh };
 
 const merged = new Map<Lang, Messages>();
 

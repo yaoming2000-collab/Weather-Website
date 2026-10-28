@@ -19,7 +19,7 @@ describe('translations', () => {
     expect(t('bp', 'TodayLabel')).not.toBe('Today');
   });
 
-  it('has every string translated in all 26 languages, with the same placeholders', () => {
+  it('has every string translated in all 28 languages, with the same placeholders', () => {
     for (const l of LANGUAGES.map((x) => x.code)) {
       expect(missingKeys(l), l).toEqual([]);
       for (const [k, v] of Object.entries(messages('en'))) {

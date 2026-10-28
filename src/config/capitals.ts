@@ -60,5 +60,5 @@ export const LANGUAGE_COUNTRY: Record<string, string> = {
   zh: 'CN', ja: 'JP', ko: 'KR', th: 'TH', vi: 'VN', id: 'ID', in: 'ID', ms: 'MY', tr: 'TR', ru: 'RU', uk: 'UA',
   el: 'GR', de: 'DE', fr: 'FR', it: 'IT', es: 'ES', pt: 'PT', nl: 'NL', pl: 'PL', sv: 'SE', da: 'DK', fi: 'FI',
   no: 'NO', nb: 'NO', nn: 'NO', ar: 'SA', hi: 'IN', he: 'IL', iw: 'IL', cs: 'CZ', sk: 'SK', hu: 'HU', ro: 'RO',
-  bg: 'BG', hr: 'HR', sr: 'RS', sl: 'SI', et: 'EE', lv: 'LV', lt: 'LT', fa: 'IR', ur: 'PK', bn: 'BD',
+  bg: 'BG', mo: 'MD', be: 'BY', hr: 'HR', sr: 'RS', sl: 'SI', et: 'EE', lv: 'LV', lt: 'LT', fa: 'IR', ur: 'PK', bn: 'BD',
 };

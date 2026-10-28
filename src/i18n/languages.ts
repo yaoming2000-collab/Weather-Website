@@ -1,5 +1,6 @@
 /**
- * 支持的 26 种语言，沿用旧站 i18n/ 目录（2026-10-28 去掉了希伯来语，旧的希伯来语网址跳转到英文）。
+ * 支持的 28 种语言：旧站的 i18n/ 目录去掉希伯来语（旧的希伯来语网址跳转到英文），2026-10-28 新增保加利亚语、罗马尼亚语。
+ * 白俄罗斯用户用俄语（浏览器语言是白俄罗斯语时显示俄语）。
  * 网址里的语言代码就是这里的 code，例如 /wmi/bp/w/...
  *
  * 业务代码说明（与旧站一致）：
@@ -34,6 +35,8 @@ export const LANGUAGES = [
   { code: 'no', name: 'Norsk', intl: 'nb' },
   { code: 'el', name: 'Ελληνικά', intl: 'el' },
   { code: 'uk', name: 'Українська', intl: 'uk' },
+  { code: 'bg', name: 'Български', intl: 'bg' },
+  { code: 'ro', name: 'Română', intl: 'ro' },
 ] as const;
 
 export type Lang = (typeof LANGUAGES)[number]['code'];
@@ -65,6 +68,9 @@ const BASE_ALIASES: Record<string, Lang> = {
   in: 'id',
   nb: 'no',
   nn: 'no',
+  // 白俄罗斯语 → 俄语（Darren 2026-10-28）；摩尔多瓦语 → 罗马尼亚语
+  be: 'ru',
+  mo: 'ro',
 };
 
 function isRegion(value: string): boolean {

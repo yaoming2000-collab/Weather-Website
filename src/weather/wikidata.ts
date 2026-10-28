@@ -1,5 +1,5 @@
 /**
- * Foreca 不支持的 9 种语言（日语、阿拉伯语、印地语、印尼语、越南语、丹麦语、挪威语、希腊语、乌克兰语）的城市名，
+ * Foreca 不支持的 11 种语言（日语、阿拉伯语、印地语、印尼语、越南语、丹麦语、挪威语、希腊语、乌克兰语、保加利亚语、罗马尼亚语）的城市名，
  * 从 Wikidata 查：Foreca 的城市 ID = 100000000 + GeoNames ID，Wikidata 用 P1566 记录 GeoNames ID。
  * 同一个 GeoNames ID 偶尔对应多个条目（例如北京和历史上的顺天府），取维基百科语言版本最多（sitelinks）且未废止的那个。
  * 同时取国家的 ISO 代码，国家名由浏览器和 Workers 自带的 Intl.DisplayNames 翻译。
@@ -17,6 +17,8 @@ export const WIKIDATA_LANGS: Record<string, readonly string[]> = {
   no: ['nb', 'no', 'nn'],
   el: ['el'],
   uk: ['uk'],
+  bg: ['bg'],
+  ro: ['ro'],
 };
 
 export interface WikiPlace {
