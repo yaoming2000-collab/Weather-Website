@@ -1,3 +1,4 @@
+import { CAPITALS, LANGUAGE_COUNTRY } from '../config/capitals';
 import { FALLBACK_COORDS } from '../config/thresholds';
 
 export interface Coords {
@@ -34,6 +35,26 @@ export function parseLatLonPair(value: string | undefined): Coords | null {
   return parseCoords(lat, lon);
 }
 
-export function fallbackCoords(): Coords {
+/**
+ * 拿不到访客坐标时的默认城市（Darren 2026-10-28 确认）：
+ *   1. Cloudflare 判断的访客国家（request.cf.country）的首都；
+ *   2. 浏览器语言里的地区（Accept-Language，例如 pt-BR → 巴西），没有地区时按语言推断（ja → 日本）；
+ *   3. 都没有时用伦敦。
+ */
+export function fallbackCoords(request?: Request, acceptLanguage?: string | null): Coords {
+  const cf = (request as (Request & { cf?: { country?: string } }) | undefined)?.cf;
+  const fromCountry = capitalOf(cf?.country);
+  if (fromCountry) return fromCountry;
+  for (const item of (acceptLanguage ?? '').split(',')) {
+    const parts = (item.split(';')[0] ?? '').trim().replace(/_/g, '-').split('-');
+    const region = parts.slice(1).find((p) => /^[A-Za-z]{2}$/.test(p));
+    const found = capitalOf(region) ?? capitalOf(LANGUAGE_COUNTRY[(parts[0] ?? '').toLowerCase()]);
+    if (found) return found;
+  }
   return { ...FALLBACK_COORDS };
+}
+
+function capitalOf(code: string | undefined | null): Coords | null {
+  const c = code ? CAPITALS[code.toUpperCase()] : undefined;
+  return c ? { lat: c[0], lon: c[1] } : null;
 }

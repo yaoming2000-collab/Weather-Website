@@ -10,6 +10,8 @@ export interface Env {
   DB?: D1Database;
   /** 城市搜索的频率限制（每个 IP 每分钟次数，见 wrangler.toml [[ratelimits]]）。没有绑定时不限制 */
   SEARCH_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
+  /** 本次部署的版本（wrangler.toml [version_metadata]），用于页面缓存的键 */
+  CF_VERSION_METADATA?: { id: string };
   /** 静态文件 */
   ASSETS?: Fetcher;
 }

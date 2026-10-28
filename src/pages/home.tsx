@@ -24,7 +24,7 @@ import {
 } from '../weather/derive';
 import type { CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
-import { AdSlot, DASH, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
+import { AdSlot, DASH, Distance, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
 import { G } from './glyphs';
 import { computeSky, displayIcon, type Sky } from './sky';
 
@@ -404,9 +404,10 @@ export function HomePage(p: PageProps) {
           {t(lang, conditionKey(heroIcon))}
         </p>
         <p class="hl-line">
-          {t(lang, 'HighShort')} <b><Temp c={today?.maxTemp} /></b>
+          {/* 每组"标签 + 温度"单独隔离，从右往左的语言里标签和数字不会错位 */}
+          <bdi>{t(lang, 'HighShort')} <b><Temp c={today?.maxTemp} /></b></bdi>
           {'  '}
-          {t(lang, 'LowShort')} <b><Temp c={today?.minTemp} /></b>
+          <bdi>{t(lang, 'LowShort')} <b><Temp c={today?.minTemp} /></b></bdi>
         </p>
         {c.feelsLike !== null && c.temperature !== null && Math.round(c.feelsLike) !== Math.round(c.temperature) ? (
           <p class="feels">
@@ -518,15 +519,15 @@ export function HomePage(p: PageProps) {
             <Precip mm={today?.precipAccum} />
           </div>
           <div class="note">
-            {t(lang, 'TodayLabel')}
-            {today?.precipProb !== null && today?.precipProb !== undefined ? `, ${t(lang, 'ChanceOfPrecip').toLowerCase()} ${Math.round(today.precipProb)}%` : ''}
+            {today?.precipProb !== null && today?.precipProb !== undefined
+              ? t(lang, 'PrecipTodayNote', { percent: Math.round(today.precipProb) })
+              : t(lang, 'TodayLabel')}
           </div>
         </div>
         <div class="tile">
           <Sec tag="h3" icon={G.eye()} title={t(lang, 'WeatherVisibility')} />
           <div class="big">
-            {c.visibility === null ? DASH : Math.round(c.visibility / 1000)}
-            <small>km</small>
+            <Distance m={c.visibility} />
           </div>
           <div class="note">{t(lang, visibilityKey(c.visibility))}</div>
         </div>

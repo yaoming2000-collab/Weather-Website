@@ -1,5 +1,6 @@
 /**
- * 支持的 27 种语言，沿用旧站 i18n/ 目录。
+ * 支持的 28 种语言：旧站的 i18n/ 目录去掉希伯来语（旧的希伯来语网址跳转到英文），2026-10-28 新增保加利亚语、罗马尼亚语。
+ * 白俄罗斯用户用俄语（浏览器语言是白俄罗斯语时显示俄语）。
  * 网址里的语言代码就是这里的 code，例如 /wmi/bp/w/...
  *
  * 业务代码说明（与旧站一致）：
@@ -21,7 +22,6 @@ export const LANGUAGES = [
   { code: 'bp', name: 'Português (Brasil)', intl: 'pt-BR' },
   { code: 'ru', name: 'Русский', intl: 'ru' },
   { code: 'ar', name: 'العربية', intl: 'ar' },
-  { code: 'he', name: 'עברית', intl: 'he' },
   { code: 'hi', name: 'हिन्दी', intl: 'hi' },
   { code: 'id', name: 'Bahasa Indonesia', intl: 'id' },
   { code: 'th', name: 'ไทย', intl: 'th' },
@@ -35,6 +35,8 @@ export const LANGUAGES = [
   { code: 'no', name: 'Norsk', intl: 'nb' },
   { code: 'el', name: 'Ελληνικά', intl: 'el' },
   { code: 'uk', name: 'Українська', intl: 'uk' },
+  { code: 'bg', name: 'Български', intl: 'bg' },
+  { code: 'ro', name: 'Română', intl: 'ro' },
 ] as const;
 
 export type Lang = (typeof LANGUAGES)[number]['code'];
@@ -43,7 +45,10 @@ export const DEFAULT_LANG: Lang = 'en';
 
 const CODES = new Set<string>(LANGUAGES.map((l) => l.code));
 
-const RTL = new Set<Lang>(['ar', 'he']);
+const RTL = new Set<Lang>(['ar']);
+
+/** 不再支持的语言：网址里出现时跳转到英文 */
+export const DROPPED_LANGS = new Set(['he', 'iw']);
 
 export function isLang(value: string | undefined | null): value is Lang {
   return !!value && CODES.has(value);
@@ -61,9 +66,11 @@ export function intlLocale(lang: Lang): string {
 /** 语言代码别名：浏览器或系统可能给出的代码 → 我们的代码。 */
 const BASE_ALIASES: Record<string, Lang> = {
   in: 'id',
-  iw: 'he',
   nb: 'no',
   nn: 'no',
+  // 白俄罗斯语 → 俄语（Darren 2026-10-28）；摩尔多瓦语 → 罗马尼亚语
+  be: 'ru',
+  mo: 'ro',
 };
 
 function isRegion(value: string): boolean {

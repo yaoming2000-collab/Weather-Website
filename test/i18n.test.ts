@@ -19,9 +19,15 @@ describe('translations', () => {
     expect(t('bp', 'TodayLabel')).not.toBe('Today');
   });
 
-  it('falls back to English for strings not yet translated (filled in step 4)', () => {
-    expect(t('tr', 'SeeAll15Days')).toBe('See 15 days');
-    expect(missingKeys('en')).toEqual([]);
+  it('has every string translated in all 28 languages, with the same placeholders', () => {
+    for (const l of LANGUAGES.map((x) => x.code)) {
+      expect(missingKeys(l), l).toEqual([]);
+      for (const [k, v] of Object.entries(messages('en'))) {
+        const ph = (x: string) => (x.match(/\{\w+\}/g) ?? []).sort().join();
+        expect(ph(t(l, k)), `${l} ${k}`).toBe(ph(v));
+      }
+    }
+    expect(t('tr', 'SeeAll15Days')).not.toBe('See 15 days');
   });
 
   it('has an English weather description for every icon', () => {

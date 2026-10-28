@@ -63,6 +63,15 @@ describe('home and redirects', () => {
     expect(res.headers.get('Location')).toBe('/wmi/en/w/102643743');
   });
 
+  it('without coordinates, uses the capital of the visitor country, then the browser language', async () => {
+    // 只知道国家：俄罗斯 → 莫斯科；只有浏览器语言 vi-VN → 河内；只有 "ru" → 莫斯科
+    expect((await app().request(req('/', { cf: { country: 'RU' } }))).headers.get('Location')).toBe('/wmi/en/w/100524901');
+    expect((await app().request(req('/', { headers: { 'Accept-Language': 'vi-VN,vi;q=0.9' } }))).headers.get('Location')).toBe('/wmi/vi/w/101581130');
+    expect((await app().request(req('/', { headers: { 'Accept-Language': 'ru' } }))).headers.get('Location')).toBe('/wmi/ru/w/100524901');
+    // 未知国家代码、英文无地区：伦敦
+    expect((await app().request(req('/', { cf: { country: 'T1' }, headers: { 'Accept-Language': 'en' } }))).headers.get('Location')).toBe('/wmi/en/w/102643743');
+  });
+
   it('redirects the old cities page', async () => {
     const res = await app().request(req('/wsearch-mi/cities?locale=es-MX'));
     expect(res.headers.get('Location')).toBe('/wsearch-mi/lm/cities?locale=es-MX');
@@ -114,7 +123,7 @@ describe('city page', () => {
 
   it('shows a dash instead of 0 when a value is missing', async () => {
     const html = await (await app().request(req('/wmi/en/w/100108410'))).text();
-    expect(html).toMatch(/Visibility<\/span><\/h3><div class="big">—/);
+    expect(html).toMatch(/Visibility<\/span><\/h3><div class="big"><span>—<\/span>/);
   });
 
   it('uses the old site translations', async () => {
@@ -142,6 +151,38 @@ describe('city page', () => {
     const html = await res.text();
     expect(html).toContain('data-saved-list');
     expect(html).toContain('"channel":"wxiaomi"');
+  });
+
+  it('sends old Hebrew links to the English page', async () => {
+    for (const [from, to] of [
+      ['/wmi/he/w/102643743?session=1', '/wmi/en/w/102643743?session=1'],
+      ['/mi/iw/w/102643743/hourly', '/mi/en/w/102643743/hourly'],
+      ['/wme/he/cities', '/wme/en/cities'],
+      ['/wmi/he', '/wmi/'],
+      ['/wmi/he/?x=1', '/wmi/?x=1'],
+    ] as const) {
+      const res = await app().request(req(from));
+      expect(res.status, from).toBe(301);
+      expect(res.headers.get('Location'), from).toBe(to);
+    }
+    const home = await app().request(req('/', { headers: { 'Accept-Language': 'he-IL,he;q=0.9' } }));
+    expect(home.headers.get('Location')).toMatch(/^\/wmi\/en\/w\//);
+  });
+
+  it('shows the city name in the page language, but keeps English names for the ranking', async () => {
+    const names = { lookup: async (ids: string[]) => new Map(ids.filter((i) => i === '102643743').map((i) => [i, { labels: { ja: 'ロンドン' }, iso: 'GB' }])) };
+    const features = new MemoryFeatureStore();
+    const a = createApp({
+      weather: () => new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, names),
+      features: () => features,
+    });
+    const html = await (await a.request(req('/wmi/ja/w/102643743'))).text();
+    expect(html).toContain('<span>ロンドン</span>');
+    expect(html).toContain('イギリス');
+    const ranking = await features.ranking(NOW);
+    expect([...ranking.warmest, ...ranking.coldest].map((r) => r.name)).toEqual(['London']);
+    const page = await (await a.request(req('/wmi/ja/ranking'))).text();
+    expect(page).toContain('ロンドン');
   });
 
   it('sets right-to-left for Arabic', async () => {
@@ -381,6 +422,27 @@ describe('page cache', () => {
       expect(res.every((r) => r.headers.get('X-Page-Cache') === 'STALE')).toBe(true);
       await Promise.all(pending.splice(0));
       expect(renders).toBe(2);
+    } finally {
+      g.caches = before;
+    }
+  });
+
+  it('does not serve pages cached by a previous deployment', async () => {
+    const g = globalThis as { caches?: unknown };
+    const before = g.caches;
+    g.caches = { default: fakeCache() };
+    try {
+      const a = app();
+      const ctx = { waitUntil: async (p: Promise<unknown>) => p, passThroughOnException() {} } as unknown as ExecutionContext;
+      const get = async (version: string) => {
+        const pending: Promise<unknown>[] = [];
+        const r = await a.fetch(req('/wmi/en/w/102643743'), { CF_VERSION_METADATA: { id: version } }, { ...ctx, waitUntil: (p: Promise<unknown>) => pending.push(p) } as unknown as ExecutionContext);
+        await Promise.all(pending);
+        return r.headers.get('X-Page-Cache');
+      };
+      expect(await get('v1')).toBe('MISS');
+      expect(await get('v1')).toBe('HIT');
+      expect(await get('v2')).toBe('MISS');
     } finally {
       g.caches = before;
     }

@@ -41,6 +41,10 @@ namespace_id = "1001"
   limit = 30
   period = 60
 
+# 每次部署的版本号：页面缓存按版本区分，部署后访客马上看到新页面（不会拿到旧版本缓存的 HTML）
+[version_metadata]
+binding = "CF_VERSION_METADATA"
+
 [vars]
 # foreca = 调用真实接口（需要 FORECA_TOKEN 密钥）；mock = 使用模拟数据（开发、预览用）
 WEATHER_PROVIDER = "foreca"
@@ -63,6 +67,9 @@ name = "weather-itsfunmag-preview"
 name = "SEARCH_LIMITER"
 namespace_id = "1002"
 simple = { limit = 30, period = 60 }
+
+[env.preview.version_metadata]
+binding = "CF_VERSION_METADATA"
 
 [env.preview.vars]
 WEATHER_PROVIDER = "foreca"

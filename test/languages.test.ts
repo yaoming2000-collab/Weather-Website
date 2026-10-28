@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { LANGUAGES, parseLanguage, resolveLanguage, textDirection } from '../src/i18n/languages';
 
 describe('languages', () => {
-  it('has the 27 languages of the old site', () => {
-    expect(LANGUAGES).toHaveLength(27);
+  it('has the old site languages except Hebrew, plus Bulgarian and Romanian (28)', () => {
+    expect(LANGUAGES).toHaveLength(28);
     const codes = LANGUAGES.map((l) => l.code).sort();
     expect(codes).toEqual(
-      ['ar', 'bp', 'da', 'de', 'el', 'en', 'es', 'fi', 'fr', 'he', 'hi', 'id', 'it', 'ja', 'ko', 'lm', 'nl', 'no', 'pl', 'pt', 'ru', 'sv', 'th', 'tr', 'uk', 'vi', 'zh'].sort(),
+      ['ar', 'bg', 'bp', 'da', 'de', 'el', 'en', 'es', 'fi', 'fr', 'hi', 'id', 'it', 'ja', 'ko', 'lm', 'nl', 'no', 'pl', 'pt', 'ro', 'ru', 'sv', 'th', 'tr', 'uk', 'vi', 'zh'].sort(),
     );
   });
 
@@ -27,7 +27,14 @@ describe('languages', () => {
     ['zh-CN', 'zh'],
     ['zh-Hant-TW', 'zh'],
     ['nb-NO', 'no'],
-    ['iw', 'he'],
+    ['iw', null],
+    ['be-BY', 'ru'],
+    ['be', 'ru'],
+    ['bg-BG', 'bg'],
+    ['ro-RO', 'ro'],
+    ['ro-MD', 'ro'],
+    ['mo', 'ro'],
+    ['he', null],
     ['ar-SA', 'ar'],
     ['en-US', 'en'],
     ['tr', 'tr'],
@@ -50,7 +57,6 @@ describe('languages', () => {
 
   it('marks Arabic and Hebrew as right-to-left', () => {
     expect(textDirection('ar')).toBe('rtl');
-    expect(textDirection('he')).toBe('rtl');
     expect(textDirection('en')).toBe('ltr');
   });
 });

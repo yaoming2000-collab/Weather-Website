@@ -99,8 +99,8 @@ export class ForecaProvider implements WeatherProvider {
     return mapLocation(raw);
   }
 
-  async locationById(id: string): Promise<WeatherLocation> {
-    const raw = await this.get<RawLocation>(`/api/v1/location/${this.loc(id)}`, { lang: 'en' }, true);
+  async locationById(id: string, lang = 'en'): Promise<WeatherLocation> {
+    const raw = await this.get<RawLocation>(`/api/v1/location/${this.loc(id)}`, { lang: forecaLocationLang(lang) }, true);
     return mapLocation(raw);
   }
 

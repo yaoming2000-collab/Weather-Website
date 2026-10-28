@@ -17,7 +17,8 @@ export interface WeatherProvider {
   readonly name: string;
   /** 离给定坐标最近的地点 */
   nearestLocation(lat: number, lon: number): Promise<WeatherLocation>;
-  locationById(id: string): Promise<WeatherLocation>;
+  /** lang：城市名的语言（Foreca 支持的 15 种之一），不给时用英文 */
+  locationById(id: string, lang?: string): Promise<WeatherLocation>;
   searchLocations(query: string, lang: string): Promise<WeatherLocation[]>;
   current(id: string): Promise<CurrentWeather>;
   hourly(id: string, hours: number): Promise<HourlyPoint[]>;
