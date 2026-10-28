@@ -28,6 +28,8 @@ export interface AnomalyRecord {
   level: ClimateLevel;
   /** 写入时间（毫秒） */
   updatedAt: number;
+  /** 这一天在城市当地结束的时刻（毫秒）。过了就不再算"今天"，不上榜。 */
+  validUntil: number;
 }
 
 export interface Ranking {
@@ -70,7 +72,7 @@ export function guessCutoffDate(nowMs: number): string {
 
 function sortRanking(rows: AnomalyRecord[], nowMs: number): Ranking {
   const since = nowMs - RANKING.windowHours * 3600_000;
-  const recent = rows.filter((r) => r.updatedAt >= since);
+  const recent = rows.filter((r) => r.updatedAt >= since && r.validUntil > nowMs);
   return {
     warmest: recent.filter((r) => r.deltaMax > 0).sort((a, b) => b.deltaMax - a.deltaMax).slice(0, RANKING.size),
     coldest: recent.filter((r) => r.deltaMax < 0).sort((a, b) => a.deltaMax - b.deltaMax).slice(0, RANKING.size),
@@ -142,6 +144,7 @@ interface AnomalyRow {
   avg_max_temp: number;
   level: string;
   updated_at: number;
+  valid_until: number;
 }
 
 function fromRow(r: AnomalyRow): AnomalyRecord {
@@ -155,6 +158,7 @@ function fromRow(r: AnomalyRow): AnomalyRecord {
     avgMaxTemp: r.avg_max_temp,
     level: r.level as ClimateLevel,
     updatedAt: r.updated_at,
+    validUntil: r.valid_until,
   };
 }
 
@@ -194,15 +198,15 @@ export class D1FeatureStore implements FeatureStore {
     const staleBefore = rec.updatedAt - RANKING.recordEverySeconds * 1000;
     await this.db
       .prepare(
-        `INSERT INTO anomalies (city_id, name, country, date, delta_max, max_temp, avg_max_temp, level, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        `INSERT INTO anomalies (city_id, name, country, date, delta_max, max_temp, avg_max_temp, level, updated_at, valid_until)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?11)
          ON CONFLICT (city_id) DO UPDATE SET
            name = excluded.name, country = excluded.country, date = excluded.date,
            delta_max = excluded.delta_max, max_temp = excluded.max_temp, avg_max_temp = excluded.avg_max_temp,
-           level = excluded.level, updated_at = excluded.updated_at
+           level = excluded.level, updated_at = excluded.updated_at, valid_until = excluded.valid_until
          WHERE anomalies.updated_at < ?10 OR anomalies.date <> excluded.date`,
       )
-      .bind(rec.cityId, rec.name, rec.country, rec.date, rec.deltaMax, rec.maxTemp, rec.avgMaxTemp, rec.level, rec.updatedAt, staleBefore)
+      .bind(rec.cityId, rec.name, rec.country, rec.date, rec.deltaMax, rec.maxTemp, rec.avgMaxTemp, rec.level, rec.updatedAt, staleBefore, rec.validUntil)
       .run();
   }
 
@@ -210,11 +214,11 @@ export class D1FeatureStore implements FeatureStore {
     const since = nowMs - RANKING.windowHours * 3600_000;
     const [warm, cold] = await this.db.batch<AnomalyRow>([
       this.db
-        .prepare('SELECT * FROM anomalies WHERE updated_at >= ?1 AND delta_max > 0 ORDER BY delta_max DESC LIMIT ?2')
-        .bind(since, RANKING.size),
+        .prepare('SELECT * FROM anomalies WHERE updated_at >= ?1 AND valid_until > ?3 AND delta_max > 0 ORDER BY delta_max DESC LIMIT ?2')
+        .bind(since, RANKING.size, nowMs),
       this.db
-        .prepare('SELECT * FROM anomalies WHERE updated_at >= ?1 AND delta_max < 0 ORDER BY delta_max ASC LIMIT ?2')
-        .bind(since, RANKING.size),
+        .prepare('SELECT * FROM anomalies WHERE updated_at >= ?1 AND valid_until > ?3 AND delta_max < 0 ORDER BY delta_max ASC LIMIT ?2')
+        .bind(since, RANKING.size, nowMs),
     ]);
     return {
       warmest: (warm?.results ?? []).map(fromRow),

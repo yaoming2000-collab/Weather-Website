@@ -1,5 +1,6 @@
 import type { CityBundle } from '../weather/service';
 import type { DailyPoint } from '../weather/types';
+import { nextLocalMidnight } from '../time/cityTime';
 import {
   climateLabel,
   climateSeries,
@@ -73,5 +74,7 @@ export function anomalyRecord(bundle: CityBundle, comparison: TodayComparison | 
     avgMaxTemp: comparison.avgMaxTemp,
     level: comparison.level,
     updatedAt: nowMs,
+    // 排行榜只算城市当地的"今天"：过了当地午夜就不上榜，等有人再访问时写入新的一天
+    validUntil: nextLocalMidnight(nowMs, bundle.location.timezone),
   };
 }

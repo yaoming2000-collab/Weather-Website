@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { getPlatformProxy } from 'wrangler';
 import { D1FeatureStore, type AnomalyRecord } from '../src/features/store';
+import { D1Usage } from '../src/features/usage';
 
 /**
  * 用 wrangler 自带的本地 D1（真实 SQLite）跑一遍 SQL，确认建表语句和查询在 D1 上能用。
@@ -15,12 +16,14 @@ let db: D1Database;
 beforeAll(async () => {
   proxy = await getPlatformProxy<{ DB: D1Database }>({ persist: false });
   db = proxy.env.DB;
-  const sql = readFileSync(new URL('../migrations/0001_features.sql', import.meta.url), 'utf8')
-    .split('\n')
-    .filter((l) => !l.trim().startsWith('--'))
-    .join('\n');
-  for (const stmt of sql.split(';').map((s) => s.replace(/--.*$/gm, '').trim()).filter(Boolean)) {
-    await db.prepare(stmt).run();
+  for (const file of ['0001_features.sql', '0002_anomaly_valid_until.sql', '0003_usage.sql']) {
+    const sql = readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8')
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('--'))
+      .join('\n');
+    for (const stmt of sql.split(';').map((s) => s.replace(/--.*$/gm, '').trim()).filter(Boolean)) {
+      await db.prepare(stmt).run();
+    }
   }
 }, 60_000);
 
@@ -29,7 +32,7 @@ afterAll(async () => {
 });
 
 function rec(cityId: string, deltaMax: number, updatedAt = NOW, date = '2026-10-22'): AnomalyRecord {
-  return { cityId, name: `City ${cityId}`, country: 'X', date, deltaMax, maxTemp: 20 + deltaMax, avgMaxTemp: 20, level: 'warmer', updatedAt };
+  return { cityId, name: `City ${cityId}`, country: 'X', date, deltaMax, maxTemp: 20 + deltaMax, avgMaxTemp: 20, level: 'warmer', updatedAt, validUntil: updatedAt + 12 * H };
 }
 
 describe('D1 storage', () => {
@@ -67,5 +70,32 @@ describe('D1 storage', () => {
     expect((await store.guessCounts('100', '2026-10-22')).warmer).toBe(20);
     const left = await db.prepare('SELECT city_id FROM anomalies ORDER BY city_id').all<{ city_id: string }>();
     expect(left.results.map((r) => r.city_id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('Foreca usage statistics', () => {
+  it('adds up calls per day and kind, and counts distinct cities', async () => {
+    let now = NOW;
+    const u = new D1Usage(db, () => now);
+    for (let i = 0; i < 3; i++) u.record('cur', '102643743', true);
+    u.record('cur', '100524901', true);
+    u.record('aq', '102643743', true);
+    u.record('clid', '102643743', false);
+    u.record('search', null, true);
+    expect(u.due()).toBe(false);
+    now += 31_000;
+    expect(u.due()).toBe(true);
+    await u.flush();
+    u.record('cur', '102643743', true);
+    await u.flush();
+    const rows = await db.prepare('SELECT kind, ok, calls FROM usage_daily WHERE date = ?1 ORDER BY kind, ok').bind('2026-10-22').all();
+    expect(rows.results).toEqual([
+      { kind: 'aq', ok: 1, calls: 1 },
+      { kind: 'clid', ok: 0, calls: 1 },
+      { kind: 'cur', ok: 1, calls: 5 },
+      { kind: 'search', ok: 1, calls: 1 },
+    ]);
+    const cities = await db.prepare('SELECT COUNT(*) AS n FROM usage_cities WHERE date = ?1').bind('2026-10-22').first<{ n: number }>();
+    expect(cities?.n).toBe(2);
   });
 });

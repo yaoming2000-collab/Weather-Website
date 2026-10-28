@@ -1,4 +1,5 @@
 import type { Channel } from '../config/channels';
+import { HOURS_SHOWN } from '../config/thresholds';
 import { intlLocale, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { hourLabel, weekdayLabel } from '../time/cityTime';
@@ -34,7 +35,7 @@ export function HourlyPage(p: PageProps) {
       <SubBar location={bundle.location} channel={channel} lang={lang} title={title} />
       <section class="card">{hours.slice(0, 12).map(row)}</section>
       <AdSlot slot="sub_1" lang={lang} />
-      <section class="card">{hours.slice(12).map((h, i) => row(h, i + 12))}</section>
+      <section class="card">{hours.slice(12, HOURS_SHOWN).map((h, i) => row(h, i + 12))}</section>
       <AdSlot slot="sub_2" lang={lang} />
       <Footer lang={lang} providerName={p.providerName} />
     </Layout>
@@ -110,7 +111,7 @@ const POLLUTANTS: Array<{ key: 'pm25' | 'pm10' | 'o3' | 'no2' | 'so2' | 'co'; la
 /** 空气质量详情 /w/{id}/air */
 export function AirPage(p: PageProps) {
   const { bundle, channel, lang } = p;
-  const points = bundle.air?.data ?? [];
+  const points = (bundle.air?.data ?? []).slice(0, HOURS_SHOWN);
   const now = points[0] ?? null;
   const level = aqiLevel(now?.aqi ?? null);
   const max = Math.max(100, ...points.map((a) => a.aqi ?? 0));

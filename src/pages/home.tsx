@@ -1,6 +1,7 @@
 import type { Child } from 'hono/jsx';
 import type { Channel } from '../config/channels';
 import { CLIMATE_LEVEL_COLORS } from '../config/features';
+import { HOURS_SHOWN } from '../config/thresholds';
 import type { CityFeatures } from '../features';
 import type { LifeIndexKey } from '../features/life';
 import { intlLocale, type Lang } from '../i18n/languages';
@@ -391,7 +392,7 @@ export function HomePage(p: PageProps) {
       <TopBar location={loc} channel={channel} lang={lang} />
       <Jump p={p} />
 
-      <section class="hero" data-current>
+      <section class="hero" data-current data-live="hero">
         <div class="now">
           <span class="t" data-current-temp>
             {c.temperature === null ? DASH : <span data-c={String(c.temperature)}>{Math.round(c.temperature)}</span>}
@@ -418,16 +419,18 @@ export function HomePage(p: PageProps) {
         </p>
       </section>
 
-      <Nowcast f={features} lang={lang} />
+      <div data-live="nowcast" style="display:contents">
+        <Nowcast f={features} lang={lang} />
+      </div>
 
-      <a class="card" data-nav href={cityPath(channel, lang, loc.id, 'hourly')}>
+      <a class="card" data-live="hourly" data-nav href={cityPath(channel, lang, loc.id, 'hourly')}>
         <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} more={t(lang, 'SeeHourlyDetails')} />
-        <HourlyStrip hours={hourly?.data ?? []} days={days} lang={lang} />
+        <HourlyStrip hours={(hourly?.data ?? []).slice(0, HOURS_SHOWN)} days={days} lang={lang} />
       </a>
 
       <AdSlot slot="home_1" height={100} lang={lang} />
 
-      <a class="card" data-nav href={cityPath(channel, lang, loc.id, '15day')}>
+      <a class="card" data-live="week" data-nav href={cityPath(channel, lang, loc.id, '15day')}>
         <Sec icon={G.calendar()} title={t(lang, 'DailyForecastTitle')} more={t(lang, 'SeeAll15Days')} />
         {week.map((d, i) => (
           <DayRow d={d} lang={lang} range={range} nowTemp={i === 0 ? c.temperature : undefined} />
@@ -438,7 +441,7 @@ export function HomePage(p: PageProps) {
 
       <AdSlot slot="home_2" lang={lang} />
 
-      <a class="card" data-nav href={cityPath(channel, lang, loc.id, 'air')}>
+      <a class="card" data-live="aq" data-nav href={cityPath(channel, lang, loc.id, 'air')}>
         <Sec icon={G.leaf()} title={t(lang, 'WeatherAirQuality')} more={t(lang, 'SeeDetails')} />
         <div class="aq">
           <span class="v">{aq?.aqi ?? DASH}</span>
@@ -447,7 +450,7 @@ export function HomePage(p: PageProps) {
         <div class="meter">{aq?.aqi !== null && aq?.aqi !== undefined ? <b style={`inset-inline-start:${aqiPercent(aq.aqi).toFixed(1)}%`} /> : null}</div>
       </a>
 
-      <div class="grid">
+      <div class="grid" data-live="tiles">
         <div class="tile">
           <Sec tag="h3" icon={G.thermo()} title={t(lang, 'WeatherFeelsLike')} />
           <div class="big">

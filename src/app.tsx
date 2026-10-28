@@ -51,11 +51,15 @@ export function createApp(
   // 所有响应都不让搜索引擎收录（需求文档"架构与缓存"）
   app.use('*', async (c, next) => {
     shared ??= makeWeather(c.env ?? {});
+    shared.setColo((c.req.raw as { cf?: { colo?: string } }).cf?.colo);
     c.set('weather', shared);
     sharedFeatures ??= makeFeatures(c.env ?? {});
     c.set('features', sharedFeatures);
     await next();
     c.res.headers.set('X-Robots-Tag', 'noindex');
+    // Foreca 调用统计：攒够一批后在后台写进数据库
+    const flush = shared.usageFlush();
+    if (flush) waitUntil(c, flush);
   });
 
   // ---------- 接口（给浏览器脚本用） ----------
@@ -77,6 +81,13 @@ export function createApp(
   app.get('/api/search', async (c) => {
     const q = c.req.query('q') ?? '';
     const lang = isLang(c.req.query('lang')) ? (c.req.query('lang') as Lang) : 'en';
+    // 每次搜索都向 Foreca 计费：每个 IP 限制频率，防止机器人消耗额度
+    const limiter = c.env?.SEARCH_LIMITER;
+    if (limiter) {
+      const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+      const { success } = await limiter.limit({ key: `search:${ip}` }).catch(() => ({ success: true }));
+      if (!success) return c.json({ error: 'too many requests' }, 429);
+    }
     try {
       const items = await c.var.weather.search(q, lang);
       c.header('Cache-Control', 'public, max-age=3600');
@@ -273,36 +284,72 @@ function defaultCache(): Cache | undefined {
   return (globalThis as { caches?: { default?: Cache } }).caches?.default;
 }
 
-/** 城市页面：先查页面缓存；过期但仍在宽限期内时先返回旧页面、后台重新生成 */
+/**
+ * 页面缓存不分渠道：各渠道的页面只有链接前缀不同（广告代码不区分渠道，Darren 2026-10-27 确认）。
+ * 生成页面时渠道先写成占位符，返回给访客前再换成实际渠道，所以一个城市页面每个机房只存一份。
+ */
+const CHANNEL_PLACEHOLDER = '__ch__' as Channel;
+
+/** 正在后台重新生成的页面（同一个 Worker 实例内），避免同一页面同时重做多次 */
+const revalidating = new Set<string>();
+
+/** 城市页面：先查页面缓存；过期但仍在宽限期内时先返回旧页面、后台重新生成（同一时间只做一次） */
 async function cityPage(c: C, sub?: SubPage) {
   const target = parseTarget(c);
   const id = c.req.param('id') ?? '';
   if (!target || !LOCATION_ID.test(id)) return c.notFound();
 
   const url = new URL(c.req.url);
-  const key = new Request(pageCacheKey(url));
+  const keyUrl = pageCacheKey(url);
+  const key = new Request(keyUrl);
   const cache = defaultCache();
-  const render = () => renderCity(c, target.channel, target.lang, id, sub);
+  const render = () => renderCity(c, CHANNEL_PLACEHOLDER, target.lang, id, sub);
 
   if (cache) {
     const hit = await cache.match(key);
     if (hit) {
       const age = Date.now() - Number(hit.headers.get('X-Rendered-At') ?? 0);
       const ttl = Number(hit.headers.get('X-Page-TTL') ?? PAGE_TTL);
-      if (age > ttl * 1000) {
-        waitUntil(c, render().then((r) => (r.status === 200 ? store(cache, key, r) : undefined)));
-      }
-      const res = new Response(hit.body, hit);
+      const stale = age > ttl * 1000;
+      if (stale) waitUntil(c, revalidate(cache, key, keyUrl, render));
+      const res = await withChannel(hit, target.channel);
       res.headers.set('Cache-Control', `public, max-age=${BROWSER_MAX_AGE}`);
-      res.headers.set('X-Page-Cache', age > ttl * 1000 ? 'STALE' : 'HIT');
+      res.headers.set('X-Page-Cache', stale ? 'STALE' : 'HIT');
       return res;
     }
   }
 
   const res = await render();
   if (cache && res.status === 200) waitUntil(c, store(cache, key, res.clone()));
-  res.headers.set('X-Page-Cache', 'MISS');
-  return res;
+  const out = await withChannel(res, target.channel);
+  out.headers.set('X-Page-Cache', 'MISS');
+  return out;
+}
+
+/**
+ * 后台重新生成一个页面。同一机房里只做一次：本实例内用 revalidating 记住，
+ * 跨实例用一条 30 秒的缓存标记（Cache API 在同一机房内共享）。
+ */
+async function revalidate(cache: Cache, key: Request, keyUrl: string, render: () => Promise<Response>) {
+  // 先同步占位，再做异步检查，否则同时到达的请求都会通过检查
+  if (revalidating.has(keyUrl)) return;
+  revalidating.add(keyUrl);
+  const marker = new Request(`${keyUrl}?revalidating`);
+  try {
+    if (await cache.match(marker)) return;
+    await cache.put(marker, new Response('1', { headers: { 'Cache-Control': 'public, max-age=30' } }));
+    const r = await render();
+    if (r.status === 200) await store(cache, key, r);
+    await cache.delete(marker).catch(() => false);
+  } finally {
+    revalidating.delete(keyUrl);
+  }
+}
+
+/** 把页面里的渠道占位符换成访客实际的渠道 */
+async function withChannel(res: Response, channel: Channel): Promise<Response> {
+  const html = (await res.text()).replaceAll(CHANNEL_PLACEHOLDER, channel);
+  return new Response(html, res);
 }
 
 async function store(cache: Cache, key: Request, res: Response) {
@@ -314,7 +361,7 @@ async function store(cache: Cache, key: Request, res: Response) {
 
 async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: SubPage): Promise<Response> {
   try {
-    const bundle = await c.var.weather.cityBundle(id);
+    const bundle = await c.var.weather.cityBundle(id, (p) => waitUntil(c, p));
     const now = c.var.weather.nowMs();
     const features = cityFeatures(bundle, now);
     // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
@@ -328,8 +375,9 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
       const Page = sub ? SUBPAGES[sub as keyof typeof SUBPAGES] : HomePage;
       html = await (<Page {...props} />).toString();
     }
-    // 有非关键数据没取到（例如 Foreca 限流）时，页面只缓存 1 分钟，尽快补全；否则缺的部分会挂 5 分钟
-    const partial = !bundle.hourly || !bundle.daily || !bundle.air || !bundle.climate || !bundle.climateMonthly;
+    // 有非关键数据因为临时原因没取到（例如 Foreca 限流、超时）时，页面只缓存 1 分钟，尽快补全；
+    // 城市本来就没有的数据（例如没有往年数据）不算缺，否则这类城市的页面会每分钟重做一次
+    const partial = bundle.missing.length > 0;
     return new Response(`<!doctype html>${html}`, {
       status: 200,
       headers: {

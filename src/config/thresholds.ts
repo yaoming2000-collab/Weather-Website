@@ -36,8 +36,10 @@ export const DATA_TTL = {
   location: 30 * DAY,
   current: 20 * MINUTE,
   hourly: 1 * HOUR,
+  /** 另外在城市当地午夜过期（否则过了午夜"今天"还是昨天，15 天预报只剩 14 天） */
   daily: 3 * HOUR,
-  airQuality: 1 * HOUR,
+  /** 空气质量本身是预报，3 小时取一次足够（2026-10-27 从 1 小时改） */
+  airQuality: 3 * HOUR,
   climateDaily: 365 * DAY,
   climateMonthly: 30 * DAY,
   nowcastRadar: 10 * MINUTE,
@@ -47,9 +49,40 @@ export const DATA_TTL = {
 /** 供应商出错时，旧数据最多还能用多久（秒）。 */
 export const MAX_STALE_SECONDS = 6 * HOUR;
 
+/**
+ * 每次向 Foreca 要多少个时间点（按请求次数计费，与时间点数量无关）。上限见 developer.foreca.com（2026-10-27）。
+ * 逐小时 72：明天、后天两页也有完整的逐小时；15 天是接口上限；空气质量 48 小时；降雨时间轴 12 个 15 分钟。
+ */
+export const FORECAST_PERIODS = { hourly: 72, daily: 15, airQuality: 48, nowcast: 12 } as const;
+
+/** 页面上显示多少个小时（多给 1 个：缓存的页面在浏览器里会隐藏已经过去的那一小时） */
+export const HOURS_SHOWN = 25;
+
+/**
+ * 取不到的数据也记下来，免得每次都再问一遍 Foreca（秒）。
+ * notFound：城市不存在、这个城市没有这类数据（404），全球共享；
+ * forbidden：密钥或套餐问题（401/403），只记本机房，期间照常用旧数据；
+ * transient：限流、超时、临时故障，只记本机房；没有旧数据可用时只等 transientNoData。
+ */
+export const FAILURE_TTL = { notFound: 1 * DAY, forbidden: 15 * MINUTE, transient: 2 * MINUTE, transientNoData: 20 } as const;
+
+/** 非必需数据（逐小时、15 天、空气质量、往年、降雨时间轴）最多等多久（毫秒），超时先出页面，下一次再补 */
+export const OPTIONAL_DATA_BUDGET_MS = 3000;
+
+/**
+ * 错开刷新：各机房的数据同时过期，过期后每个机房按机房代码再等 0 到"新鲜期 × share（最多 maxSeconds）"不等的时间才刷新，
+ * 等待期间先看 KV 有没有别的机房刚取的。热门城市因此大多只请求一次 Foreca。代价是数据最多晚这么久更新。
+ */
+export const REFRESH_STAGGER = { share: 0.25, maxSeconds: 5 * MINUTE } as const;
+
 /** 城市页面在 CDN 的缓存时长（秒）。 */
 export const PAGE_TTL = 5 * MINUTE;
-export const PAGE_STALE_WHILE_REVALIDATE = 60;
+/**
+ * 页面过期后，还能先给访客旧页面、后台重新生成的时长（秒）。
+ * 以前是 60 秒，冷门城市过了这 60 秒，下一个访客就要等全部数据重新取完；现在 30 分钟。
+ * 旧页面打开后，浏览器发现实况超过 20 分钟会自动补刷新。
+ */
+export const PAGE_STALE_WHILE_REVALIDATE = 30 * MINUTE;
 /** 页面有部分数据没取到时（例如供应商限流），只缓存这么久（秒），尽快补全 */
 export const PARTIAL_PAGE_TTL = 60;
 

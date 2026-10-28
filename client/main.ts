@@ -3,6 +3,7 @@
  * 页面主体由服务器生成并被 CDN 缓存；这里只处理因人而异、因时而异的部分。
  */
 import { iconImage } from '../src/weather/icons';
+import { normalizeSearch, searchLongEnough } from '../src/weather/search';
 import {
   addCity,
   LEGACY_COOKIE,
@@ -137,33 +138,45 @@ function applyTime() {
 
 let refreshing = false;
 
-async function refreshCurrent() {
-  const city = data.city;
+/**
+ * 页面开着超过 20 分钟时，重新取一次本页（通常直接来自 CDN 缓存，不会多调用天气接口），
+ * 把实况、降雨时间轴、逐小时、7 天、空气质量、各项指标和背景天空整块换成新的。
+ * 只换标了 data-live 的区域，广告位不动。数据没有比现在新时什么也不做。
+ */
+async function refreshLive(retry = true) {
   const updated = document.querySelector<HTMLElement>('[data-fetched]');
-  if (!city || !updated || refreshing) return;
+  if (!updated || refreshing) return;
   if (Date.now() - Number(updated.dataset.fetched) < REFRESH_AFTER_MS) return;
   refreshing = true;
   try {
-    const res = await fetch(`/api/w/${encodeURIComponent(city.id)}/now`);
+    // no-cache：不用浏览器里的旧副本。CDN 上的页面过期时会先给旧页面、后台重新生成，所以 15 秒后再试一次
+    const res = await fetch(location.pathname, { headers: { Accept: 'text/html' }, cache: 'no-cache' });
     if (!res.ok) return;
-    const body = (await res.json()) as { fetchedAt: number; current: { temperature: number | null; icon: string } };
-    const hero = document.querySelector('[data-current]');
-    if (!hero || body.fetchedAt <= Number(updated.dataset.fetched)) return;
-    const temp = hero.querySelector<HTMLElement>('[data-current-temp] [data-c]');
-    if (temp && body.current.temperature !== null) temp.dataset.c = String(body.current.temperature);
-    const img = hero.querySelector<HTMLImageElement>('img[data-icon]');
-    // 沙尘天的图标和描述来自空气质量，接口返回的天气图标里没有沙尘，不覆盖
-    if (img && !document.body.classList.contains('wx-dust')) {
-      img.src = `/img/weather/${iconImage(body.current.icon)}`;
-      img.dataset.icon = body.current.icon;
+    const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+    const fresh = doc.querySelector<HTMLElement>('[data-fetched]');
+    if (!fresh || Number(fresh.dataset.fetched) <= Number(updated.dataset.fetched)) {
+      if (retry) setTimeout(() => void refreshLive(false), 15_000);
+      return;
     }
-    const cond = hero.querySelector('[data-current-cond]');
-    if (cond && !document.body.classList.contains('wx-dust')) cond.textContent = s(`Cond_${body.current.icon === 'night' ? 'night' : body.current.icon.replace(/^night-/, '')}`);
-    updated.dataset.fetched = String(body.fetchedAt);
-    applyUnits(currentSystem(), hero);
+    for (const el of $$('[data-live]')) {
+      const next = doc.querySelector(`[data-live="${el.dataset.live}"]`);
+      if (!next) continue;
+      const node = document.importNode(next, true) as HTMLElement;
+      el.replaceWith(node);
+      // 新换上的链接补上 session、uid 等参数
+      syncNav(node);
+      if (node.matches('a[data-nav]')) node.setAttribute('href', withNav(node.getAttribute('href') ?? '/'));
+    }
+    const sky = document.querySelector('.sky');
+    const nextSky = doc.querySelector('.sky');
+    if (sky && nextSky) sky.replaceWith(document.importNode(nextSky, true));
+    document.body.className = doc.body.className;
+    const theme = doc.querySelector('meta[name="theme-color"]')?.getAttribute('content');
+    if (theme) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme);
+    applyUnits(currentSystem());
     applyTime();
   } catch {
-    // 网络失败时保留页面上的数据
+    // 网络不好时保持现有内容
   } finally {
     refreshing = false;
   }
@@ -304,28 +317,36 @@ function setupSearch() {
   if (!form || !box || !input) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let seq = 0;
+  /** 本页已经搜过的结果，删字、重打时不再请求 */
+  const seen = new Map<string, Card[]>();
+  const show = (items: Card[]) =>
+    box.replaceChildren(...(items.length ? items.map((c) => cityRow(c)) : [el('div', { class: 'empty' }, s('NoMatchingCities'))]));
   const run = async () => {
-    const q = input.value.trim();
-    if (q.length < 2) {
+    const q = normalizeSearch(input.value);
+    if (!searchLongEnough(q)) {
       box.hidden = true;
       return;
     }
     const my = ++seq;
     box.hidden = false;
+    const known = seen.get(q);
+    if (known) return show(known);
     box.replaceChildren(el('div', { class: 'empty' }, s('Searching')));
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&lang=${encodeURIComponent(data.lang)}`);
       if (my !== seq) return;
       if (!res.ok) throw new Error(String(res.status));
       const { items } = (await res.json()) as { items: Card[] };
-      box.replaceChildren(...(items.length ? items.map((c) => cityRow(c)) : [el('div', { class: 'empty' }, s('NoMatchingCities'))]));
+      seen.set(q, items);
+      show(items);
     } catch {
       if (my === seq) box.replaceChildren(el('div', { class: 'empty' }, s('SearchFailed')));
     }
   };
+  // 停止输入 0.5 秒后才搜索，避免每打一个字查一次（每次查询 Foreca 都计费）
   input.addEventListener('input', () => {
     clearTimeout(timer);
-    timer = setTimeout(run, 300);
+    timer = setTimeout(run, 500);
   });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -509,12 +530,14 @@ function init() {
   setupShare();
   setupSkyIdle();
 
-  void refreshCurrent();
+  void refreshLive();
   setInterval(applyTime, 60_000);
+  // 页面一直开着时，每 5 分钟检查一次是否该更新（只在页面可见时）
+  setInterval(() => document.visibilityState === 'visible' && void refreshLive(), 5 * 60_000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       applyTime();
-      void refreshCurrent();
+      void refreshLive();
     }
   });
 }

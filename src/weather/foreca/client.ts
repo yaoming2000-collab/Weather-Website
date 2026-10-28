@@ -21,11 +21,11 @@ import type {
   RawLocationSearch,
   RawNowcast,
 } from './raw';
+import { forecaLocationLang } from './langs';
+import { FORECAST_PERIODS } from '../../config/thresholds';
 
 const BASE_URL = 'https://weatherapi.foreca.net';
 
-/** Foreca 地点接口支持的城市名语言（其余语言的城市名由第 4 步的对照表提供）。 */
-const LOCATION_LANGS = new Set(['de', 'en', 'es', 'fr', 'it', 'pl', 'ru', 'fi', 'sv', 'nl', 'ko', 'pt', 'th', 'tr', 'zh']);
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -47,16 +47,16 @@ export class ForecaProvider implements WeatherProvider {
   }
 
   /**
-   * 请求一次；遇到限流（429）或临时故障（502/503/504）时，稍等再试一次。
+   * 请求一次；只有页面离不开的数据（地点、实况）在遇到限流（429）或临时故障（502/503/504）时稍等再试一次。
+   * 其他数据失败时页面照常显示、1 分钟后补，不重试，避免在已经限流时把请求量翻倍。
    * 每秒上限按套餐：Stratus 到 Altocumulus 10 次，Cirrus 50 次，Nimbus 500 次（business.foreca.com/weather-api/pricing，2026-10-27）；
-   * 试用和 Freemium 另有每天 2,000 次的上限。
-   * 一个新城市的页面会同时发出 7 个左右的请求，多个新城市同时打开时容易碰到每秒上限。
+   * 试用和 Freemium 另有每天 2,000 次的上限。失败的请求不计入用量。
    */
-  private async get<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
+  private async get<T>(path: string, params: Record<string, string | number> = {}, retry = false): Promise<T> {
     try {
       return await this.getOnce<T>(path, params);
     } catch (err) {
-      if (!(err instanceof ProviderError) || ![429, 502, 503, 504].includes(err.status ?? 0)) throw err;
+      if (!retry || !(err instanceof ProviderError) || ![429, 502, 503, 504].includes(err.status ?? 0)) throw err;
       await new Promise((r) => setTimeout(r, this.retryDelayMs + Math.random() * this.retryDelayMs));
       return this.getOnce<T>(path, params);
     }
@@ -95,22 +95,20 @@ export class ForecaProvider implements WeatherProvider {
 
   async nearestLocation(lat: number, lon: number): Promise<WeatherLocation> {
     // Foreca 的坐标顺序是"经度,纬度"
-    const raw = await this.get<RawLocation>(`/api/v1/location/${lon.toFixed(4)},${lat.toFixed(4)}`, { lang: 'en' });
+    const raw = await this.get<RawLocation>(`/api/v1/location/${lon.toFixed(4)},${lat.toFixed(4)}`, { lang: 'en' }, true);
     return mapLocation(raw);
   }
 
   async locationById(id: string): Promise<WeatherLocation> {
-    const raw = await this.get<RawLocation>(`/api/v1/location/${this.loc(id)}`, { lang: 'en' });
+    const raw = await this.get<RawLocation>(`/api/v1/location/${this.loc(id)}`, { lang: 'en' }, true);
     return mapLocation(raw);
   }
 
   async searchLocations(query: string, lang: string): Promise<WeatherLocation[]> {
     const q = query.trim();
     if (!q) return [];
-    // 我们的业务语言代码换成 Foreca 的：bp → pt，lm → es
-    const foreca = lang === 'bp' ? 'pt' : lang === 'lm' ? 'es' : lang;
     const raw = await this.get<RawLocationSearch>(`/api/v1/location/search/${encodeURIComponent(q)}`, {
-      lang: LOCATION_LANGS.has(foreca) ? foreca : 'en',
+      lang: forecaLocationLang(lang),
     });
     return (raw.locations ?? []).flatMap((l) => {
       try {
@@ -122,7 +120,7 @@ export class ForecaProvider implements WeatherProvider {
   }
 
   async current(id: string) {
-    return mapCurrent(await this.get<RawCurrent>(`/api/v1/current/${this.loc(id)}`, { lang: 'en' }));
+    return mapCurrent(await this.get<RawCurrent>(`/api/v1/current/${this.loc(id)}`, { lang: 'en' }, true));
   }
 
   async hourly(id: string, hours: number) {
@@ -157,6 +155,6 @@ export class ForecaProvider implements WeatherProvider {
   }
 
   async nowcast(id: string) {
-    return mapNowcast(await this.get<RawNowcast>(`/api/v1/forecast/15minutely/${this.loc(id)}`, { periods: 8 }));
+    return mapNowcast(await this.get<RawNowcast>(`/api/v1/forecast/15minutely/${this.loc(id)}`, { periods: FORECAST_PERIODS.nowcast }));
   }
 }

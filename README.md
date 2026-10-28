@@ -91,18 +91,40 @@ test/                   自动化测试
 
 ## 缓存设计
 
-- **天气数据**：按城市缓存，与语言、单位无关。两层：Cloudflare Cache API（每个机房）+ Workers KV（全球一份）。
-  只用第一层的话，同一城市的访客分布在多个机房时会重复请求 Foreca。缓存时长见 `src/config/thresholds.ts`。
-- **页面**：整页按网址（不含查询参数）缓存 5 分钟，过期后先返回旧页面、后台重新生成。
-  `session`、`uid` 因人而异，不进缓存 key；页面里的站内链接由浏览器脚本补上这些参数。
+- **天气数据**：按城市缓存，与语言、单位无关。两层：Cloudflare Cache API（每个机房各一份）+ Workers KV（全球一份）。
+  - 本机房只存"还新鲜"的数据，过期就落到 KV：其他机房刚取过的新数据直接用，不再请求 Foreca。6 小时的旧数据兜底只放在 KV。
+  - 错开刷新：各机房的数据同时过期，过期后每个机房按机房代码再等一小段（最多新鲜期的 1/4、不超过 5 分钟）才去 Foreca 取，
+    期间先看 KV 里有没有别的机房刚取的。热门城市因此大多只请求一次；只有一个机房的城市不会多请求。
+  - 取不到的数据也记下来：城市不存在 1 天（全球）；密钥或套餐问题 15 分钟、限流和超时 2 分钟（没有旧数据时 20 秒），只记本机房，期间照常用旧数据。
+  - 缓存时长、每次取多少个时间点、时限见 `src/config/thresholds.ts`。
+- **页面**：整页按网址缓存 5 分钟，**不分渠道**（生成时渠道写成占位符，返回前换成访客的渠道）。
+  过期后 30 分钟内先返回旧页面、后台重新生成，同一页面同一时间只重做一次。
+  有数据因临时原因没取到时只缓存 1 分钟。`session`、`uid` 不进缓存 key，由浏览器脚本补到链接上。
+- **浏览器**：页面开着超过 20 分钟时，重新取一次本页，把实况、逐小时、7 天、空气质量、指标和背景整块换新（广告位不动）。
 - **和时间有关的显示**（"今天"、"现在"、"X 分钟前"）在浏览器里按城市时区计算，不写死在缓存的页面里。
+
+## Foreca 调用统计
+
+线上（有 D1 时）按 UTC 日期记录每类接口的调用次数（成功才计费）和有调用的不同城市数。查询：
+
+```bash
+# 最近 31 天每天的计费调用次数
+npx wrangler d1 execute weather-features --remote --command "SELECT date, SUM(calls) AS calls FROM usage_daily WHERE ok = 1 GROUP BY date ORDER BY date DESC LIMIT 31"
+# 按接口拆分（某一天）
+npx wrangler d1 execute weather-features --remote --command "SELECT kind, ok, calls FROM usage_daily WHERE date = '2026-11-01' ORDER BY calls DESC"
+# 每天有多少个不同城市
+npx wrangler d1 execute weather-features --remote --command "SELECT date, COUNT(*) AS cities FROM usage_cities GROUP BY date ORDER BY date DESC LIMIT 31"
+```
+
+月费估算：把最近 7 天的日均计费调用 × 30，超过 1,000 万的部分每千次 0.09 €。
+测试环境没有 D1，不统计。
 
 ## 部署（第 6 步会补充完整说明）
 
 ```bash
 npx wrangler kv namespace create WEATHER_KV                     # 把输出的 id 填进 wrangler.toml
 npx wrangler d1 create weather-features                         # 把输出的 database_id 填进 wrangler.toml
-npx wrangler d1 migrations apply weather-features --remote      # 建表
+npx wrangler d1 migrations apply weather-features --remote      # 建表（migrations/ 下的全部文件，含 PR #6 新增的 0002、0003）
 npx wrangler secret put FORECA_TOKEN
 npx wrangler deploy
 ```
@@ -114,7 +136,7 @@ npx wrangler deploy
 - **猜一猜计数**：投票是"读出来加一再写回去"。KV 在多人同时投票时会丢票，同一个键每秒也只能写一次；
   D1（Cloudflare 的 SQLite 数据库）一条 SQL 就能原子地加一。数据保留 7 天，每天的定时任务清理。
 - **排行榜**：每次生成城市页面时顺便记录这个城市今天的偏差（同一城市每小时最多写一次），
-  排行榜从这张表里取最近 24 小时的数据，结果缓存 1 小时。不额外调用 Foreca。
+  排行榜只取城市当地"今天"还没结束的记录（最近 24 小时内写入），结果缓存 1 小时。不额外调用 Foreca。
 - 用量：每个城市每小时最多写一次排行榜，每次投票写一次。Workers 付费套餐（每月 5 美元）含每月 5,000 万行写入，这点用量可以忽略。
 
 ## 待核实（Foreca 试用期内）

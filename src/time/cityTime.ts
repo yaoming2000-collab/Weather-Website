@@ -57,6 +57,13 @@ export function localDate(epochMs: number, timeZone: string): string {
   return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
 }
 
+/** 城市当地下一个午夜的时刻（毫秒）。按分钟计算，误差在 1 分钟内。 */
+export function nextLocalMidnight(epochMs: number, timeZone: string): number {
+  const p = localParts(epochMs, timeZone);
+  const minutesLeft = 24 * 60 - (p.hour * 60 + p.minute);
+  return Math.floor(epochMs / 60000) * 60000 + minutesLeft * 60000;
+}
+
 /** 城市时区相对 UTC 的分钟数（东八区 = 480）。 */
 export function offsetMinutes(epochMs: number, timeZone: string): number {
   const p = localParts(epochMs, timeZone);

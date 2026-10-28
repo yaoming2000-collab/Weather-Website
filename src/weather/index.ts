@@ -1,5 +1,6 @@
 import { CacheApiStore, KvStore, MemoryStore, TieredStore, type CacheStore } from '../cache/store';
 import type { Env } from '../env';
+import { D1Usage } from '../features/usage';
 import { ForecaProvider } from './foreca/client';
 import { MockProvider } from './mock';
 import type { WeatherProvider } from './provider';
@@ -14,14 +15,15 @@ export function createProvider(env: Env): WeatherProvider {
 }
 
 export function createStore(env: Env): CacheStore {
-  const layers: CacheStore[] = [];
   const cacheApi = (globalThis as { caches?: CacheStorage & { default?: Cache } }).caches?.default;
-  if (cacheApi) layers.push(new CacheApiStore(cacheApi));
-  if (env.WEATHER_KV) layers.push(new KvStore(env.WEATHER_KV));
-  if (layers.length === 0) layers.push(memory);
-  return layers.length === 1 ? layers[0]! : new TieredStore(layers);
+  const local = cacheApi ? new CacheApiStore(cacheApi) : null;
+  const shared = env.WEATHER_KV ? new KvStore(env.WEATHER_KV) : null;
+  if (local && shared) return new TieredStore(local, shared);
+  return local ?? shared ?? memory;
 }
 
 export function createWeatherService(env: Env): WeatherService {
-  return new WeatherService(createProvider(env), createStore(env));
+  // 调用统计写在 D1（线上）；没有数据库的测试环境不统计
+  const usage = env.DB ? new D1Usage(env.DB) : undefined;
+  return new WeatherService(createProvider(env), createStore(env), undefined, undefined, undefined, usage);
 }

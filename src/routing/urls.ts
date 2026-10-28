@@ -37,8 +37,9 @@ export function citiesPath(channel: Channel, lang: Lang): string {
  * 页面缓存用的 key：去掉所有查询参数。
  * 城市页面的内容只由路径（渠道、语言、城市、子页）决定，查询参数里只有统计用的 session/uid/locale。
  */
+/** 页面缓存的键：去掉查询参数和渠道（各渠道共用一份，见 app.tsx 的 CHANNEL_PLACEHOLDER） */
 export function pageCacheKey(url: URL): string {
-  return `${url.origin}${url.pathname}`;
+  return `${url.origin}${url.pathname.replace(/^\/[^/]+\//, '/_/')}`;
 }
 
 export function rankingPath(channel: Channel, lang: Lang): string {
