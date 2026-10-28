@@ -315,5 +315,6 @@
   "StreakBroken": "Серията прекъсна",
   "SettingsTitle": "Настройки",
   "LanguageLabel": "Език",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Същия ден миналата година: макс. {temp}"
 }

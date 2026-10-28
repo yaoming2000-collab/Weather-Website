@@ -315,5 +315,6 @@
   "StreakBroken": "Putki katkesi",
   "SettingsTitle": "Asetukset",
   "LanguageLabel": "Kieli",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Sama päivä vuosi sitten: ylin {temp}"
 }

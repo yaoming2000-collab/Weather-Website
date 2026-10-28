@@ -2,7 +2,8 @@
  * 猜一猜、"预报准吗"的本地记录（localStorage）。纯函数部分单独放这里，方便测试。
  */
 
-export const GUESS_KEY = 'weather.guess.v1';
+/** v2：2026-10-28 起和去年同一天比，旧的猜测（和 30 年平均比）不算 */
+export const GUESS_KEY = 'weather.guess.v2';
 export const VOTE_KEY = 'weather.vote.v1';
 /** 本地最多记多少条，旧的先删 */
 const MAX_ENTRIES = 60;

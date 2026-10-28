@@ -315,5 +315,6 @@
   "StreakBroken": "連続記録が途切れました",
   "SettingsTitle": "設定",
   "LanguageLabel": "言語",
-  "SearchAreaPlace": "{area}（{place}）"
+  "SearchAreaPlace": "{area}（{place}）",
+  "DayLastYearHigh": "去年の同じ日：最高 {temp}"
 }

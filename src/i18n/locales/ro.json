@@ -315,5 +315,6 @@
   "StreakBroken": "Seria s-a întrerupt",
   "SettingsTitle": "Setări",
   "LanguageLabel": "Limbă",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Aceeași zi anul trecut: max. {temp}"
 }

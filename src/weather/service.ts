@@ -8,7 +8,7 @@ import {
 } from '../config/thresholds';
 import { hasRadar } from '../config/radar';
 import type { CacheEntry, CacheStore } from '../cache/store';
-import { currentHourIndex, localDate, monthDayOf, nextLocalMidnight } from '../time/cityTime';
+import { currentHourIndex, localDate, nextLocalMidnight } from '../time/cityTime';
 import { forecaLocationLang } from './foreca/langs';
 import { intlLocale, isLang } from '../i18n/languages';
 import { WIKIDATA_LANGS, type AreaSearchSource, type PlaceNamesSource, type WikiPlace } from './wikidata';
@@ -347,17 +347,27 @@ export class WeatherService {
    * （网站 27 种语言里有 12 种 Foreca 不支持、都按英文查，共用一份缓存）。
    */
   async search(query: string, lang: string): Promise<SearchHit[]> {
+    return (await this.searchDetailed(query, lang)).items;
+  }
+
+  /**
+   * 城市搜索；complete=false 表示县、区名的补充查找没在时限内完成（结果先空着，后台继续查完写进缓存，浏览器只缓存 1 分钟）。
+   * defer：请求的 waitUntil。
+   */
+  async searchDetailed(query: string, lang: string, defer?: (p: Promise<unknown>) => void): Promise<{ items: SearchHit[]; complete: boolean }> {
     const q = normalizeSearch(query);
-    if (!searchLongEnough(q)) return [];
+    if (!searchLongEnough(q)) return { items: [], complete: true };
     const fl = forecaLocationLang(lang);
     const res = await this.cached(this.key('search', fl, q), SEARCH_TTL, () => this.provider.searchLocations(q, fl));
-    if (res.data.length > 0 || !this.areaSearch) return res.data.slice(0, 10);
+    if (res.data.length > 0 || !this.areaSearch) return { items: res.data.slice(0, 10), complete: true };
     // Foreca 只收城市、镇，不收县和区（如"惠东"）：按名字找行政区，再换成附近的 Foreca 城市（县城等）
+    const p = this.areaFallback(q, lang);
+    defer?.(p.catch(() => undefined));
     try {
-      return await withBudget(this.areaFallback(q, lang), AREA_SEARCH_BUDGET_MS);
+      return { items: await withBudget(p, AREA_SEARCH_BUDGET_MS), complete: true };
     } catch (err) {
-      this.log(`[weather] area search failed for ${q}: ${(err as Error).message}`);
-      return [];
+      this.log(`[weather] area search unfinished for ${q}: ${(err as Error).message}`);
+      return { items: [], complete: false };
     }
   }
 
@@ -365,12 +375,14 @@ export class WeatherService {
     const source = this.areaSearch!;
     const res = await this.cached(['v1', 'wd', 'area', lang, q].join(':'), SEARCH_TTL, async () => {
       const areas = (await source.searchAreas(q, lang)).slice(0, 3);
+      // 同时找附近城市；有一个失败就整体失败（不缓存残缺的结果，过一会儿再试）
+      const near = await Promise.all(areas.map((a) => this.nearestLocation(a.lat, a.lon)));
       const out: SearchHit[] = [];
-      for (const a of areas) {
-        const loc = await this.nearestLocation(a.lat, a.lon).catch(() => null);
-        if (!loc || distanceKm(a, loc) > AREA_MAX_DISTANCE_KM || out.some((o) => o.id === loc.id)) continue;
+      areas.forEach((a, i) => {
+        const loc = near[i]!;
+        if (distanceKm(a, loc) > AREA_MAX_DISTANCE_KM || out.some((o) => o.id === loc.id)) return;
         out.push({ ...loc, area: a.label });
-      }
+      });
       // 城市名换成页面语言（如 Pingshan → 平山）
       const named = await this.localize(out, lang, { keepAdmin: true });
       return named.map((l, i) => ({ ...l, area: out[i]!.area }));
@@ -435,7 +447,7 @@ export class WeatherService {
    * 按 10 天一块向 OpenWeather 取（一次请求 10 天），每块永久缓存：同一城市大约每 10 天才新请求一次。
    * 某一块取不到时，那几天没有数据（页面显示 "--"），其余照常。
    */
-  async lastYear(location: WeatherLocation, dates: string[]): Promise<Fetched<Record<string, PastDay>>> {
+  async lastYear(location: WeatherLocation, dates: string[]): Promise<Fetched<Record<string, PastDay>> & { partial?: boolean }> {
     const source = this.history;
     if (!source || dates.length === 0) return { data: {}, fetchedAt: this.now() };
     const wanted = dates.map((d) => ({ date: d, past: lastYearDate(d) }));
@@ -463,7 +475,9 @@ export class WeatherService {
       const d = byPast.get(w.past);
       if (d) data[w.date] = d;
     }
-    return { data, fetchedAt };
+    // 有一块取不到（不是"没有这份数据"）：页面要知道，只短暂缓存
+    const partial = results.some((r) => r.status === 'rejected' && !isAbsent(statusOf(r.reason)));
+    return { data, fetchedAt, partial };
   }
 
   nowcast(id: string, radar: boolean): Promise<Fetched<NowcastPoint[]>> {
@@ -504,6 +518,7 @@ export class WeatherService {
     ]);
 
     const hours = hourly ? { ...hourly, data: fromCurrentHour(hourly.data, now) } : null;
+    if ((lastYear as { partial?: boolean } | null)?.partial && !missing.includes('lastYear')) missing.push('lastYear');
 
     // 降雨时间轴：只在可能下雨时才请求（需求文档"降雨时间轴"）
     let nowcast: Fetched<NowcastPoint[]> | null = null;

@@ -315,5 +315,6 @@
   "StreakBroken": "सिलसिला टूट गया",
   "SettingsTitle": "सेटिंग्स",
   "LanguageLabel": "भाषा",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "पिछले साल इसी दिन: अधिकतम {temp}"
 }

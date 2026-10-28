@@ -315,5 +315,6 @@
   "StreakBroken": "สถิติต่อเนื่องขาดแล้ว",
   "SettingsTitle": "การตั้งค่า",
   "LanguageLabel": "ภาษา",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "วันเดียวกันปีที่แล้ว: สูงสุด {temp}"
 }

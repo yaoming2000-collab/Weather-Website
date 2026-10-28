@@ -84,7 +84,7 @@ export function anomalyRecord(bundle: CityBundle, comparison: TodayComparison | 
  * 15 天对比图的第一个点（今天）也换成同一个数，和标签一致。
  */
 export function withFrozenComparison(features: CityFeatures, frozen: TodayComparison | null): CityFeatures {
-  if (!frozen || !features.comparison || frozen.date !== features.comparison.date) return features;
+  if (!frozen || (features.comparison && frozen.date !== features.comparison.date)) return features;
   const series = features.series.map((p) =>
     p.date === frozen.date ? { ...p, maxTemp: frozen.maxTemp, lastMaxTemp: frozen.lastMaxTemp, delta: frozen.deltaMax, level: frozen.level } : p,
   );

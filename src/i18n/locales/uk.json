@@ -315,5 +315,6 @@
   "StreakBroken": "Серію перервано",
   "SettingsTitle": "Налаштування",
   "LanguageLabel": "Мова",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Цей день торік: макс. {temp}"
 }

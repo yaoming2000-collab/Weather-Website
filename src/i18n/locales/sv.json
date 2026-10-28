@@ -315,5 +315,6 @@
   "StreakBroken": "Sviten bröts",
   "SettingsTitle": "Inställningar",
   "LanguageLabel": "Språk",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Samma dag i fjol: högst {temp}"
 }

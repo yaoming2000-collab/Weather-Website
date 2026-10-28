@@ -159,6 +159,7 @@ describe('WeatherService caching', () => {
     advance(86400);
     await service.cityBundle('104686017');
     expect(calls.history! - first).toBeLessThanOrEqual(1);
+    // 有一块临时取不到：记为缺数据（页面只缓存 1 分钟）
     // Foreca 的往年平均不再请求
     expect(calls.climateDay ?? 0).toBe(0);
     expect(calls.climateMonthly ?? 0).toBe(0);
@@ -409,5 +410,22 @@ describe('search by county or district name', () => {
     expect(ok.asked()).toBe(0);
     const broken = svc([], true);
     expect(await broken.service.search('Nowhere', 'en')).toEqual([]);
+  });
+});
+
+describe('last year blocks that fail', () => {
+  it('marks the page as missing data when one block fails for a temporary reason', async () => {
+    let n = 0;
+    const history = {
+      name: 'owm',
+      days: async (lat: number, lon: number, start: string) => {
+        if (n++ === 0) throw new ProviderError('busy', 503);
+        return new MockHistory().days(lat, lon, start);
+      },
+    };
+    const service = new WeatherService(new MockProvider(() => Date.UTC(2026, 9, 22, 3)), new MemoryStore(() => Date.UTC(2026, 9, 22, 3)), () => Date.UTC(2026, 9, 22, 3), () => undefined, 0, undefined, undefined, history);
+    const bundle = await service.cityBundle('102643743');
+    expect(bundle.missing).toContain('lastYear');
+    expect(Object.keys(bundle.lastYear!.data).length).toBeGreaterThan(0);
   });
 });

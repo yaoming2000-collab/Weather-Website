@@ -315,5 +315,6 @@
   "StreakBroken": "Streak broken",
   "SettingsTitle": "Settings",
   "LanguageLabel": "Language",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Same day last year: high {temp}"
 }

@@ -54,14 +54,20 @@ export class OpenWeatherHistory implements PastWeatherSource {
     } catch (err) {
       throw new ProviderError(`OpenWeather request failed (${(err as Error).message})`);
     }
-    if (!res.ok) throw new ProviderError(`OpenWeather responded ${res.status}`, res.status);
+    // 400：参数不对（我们这边的问题），重试也没用，按"没有这份数据"处理（记 1 天），免得反复请求
+    if (!res.ok) throw new ProviderError(`OpenWeather responded ${res.status}`, res.status === 400 ? 404 : res.status);
     let body: { data?: RawDay[] };
     try {
       body = (await res.json()) as { data?: RawDay[] };
     } catch {
       throw new ProviderError('OpenWeather returned invalid JSON', res.status);
     }
-    return cleanDays((body.data ?? []).map(mapDay).filter((d): d is PastDay => d !== null));
+    const days = cleanDays((body.data ?? []).map(mapDay).filter((d): d is PastDay => d !== null));
+    // 回复不完整（缺天、日期对不上）时不要缓存（否则这几天会显示 "--" 一年多），当作临时故障
+    if (days.length < HISTORY_BLOCK_DAYS || days[0]!.date !== startDate) {
+      throw new ProviderError(`OpenWeather returned ${days.length} days from ${days[0]?.date ?? '-'} (wanted ${HISTORY_BLOCK_DAYS} from ${startDate})`, 502);
+    }
+    return days.slice(0, HISTORY_BLOCK_DAYS);
   }
 }
 
@@ -131,7 +137,7 @@ export function iconOfWeatherId(id: number): string {
  * 和 MockProvider 的今年预报大致在同一温度范围，所以"热、差不多、冷"三种结果都会出现。
  */
 export class MockHistory implements PastWeatherSource {
-  readonly name = 'mock';
+  readonly name = 'mockly';
   calls = 0;
   async days(lat: number, lon: number, startDate: string): Promise<PastDay[]> {
     this.calls++;

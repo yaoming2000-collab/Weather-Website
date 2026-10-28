@@ -315,5 +315,6 @@
   "StreakBroken": "Rekken ble brutt",
   "SettingsTitle": "Innstillinger",
   "LanguageLabel": "Språk",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Samme dag i fjor: høyeste {temp}"
 }

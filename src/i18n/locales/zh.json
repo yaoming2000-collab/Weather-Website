@@ -315,5 +315,6 @@
   "StreakBroken": "连续记录中断了",
   "SettingsTitle": "设置",
   "LanguageLabel": "语言",
-  "SearchAreaPlace": "{area}（{place}）"
+  "SearchAreaPlace": "{area}（{place}）",
+  "DayLastYearHigh": "去年这天：最高 {temp}"
 }

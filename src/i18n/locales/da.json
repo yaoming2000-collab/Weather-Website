@@ -315,5 +315,6 @@
   "StreakBroken": "Stimen blev brudt",
   "SettingsTitle": "Indstillinger",
   "LanguageLabel": "Sprog",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Samme dag sidste år: højst {temp}"
 }

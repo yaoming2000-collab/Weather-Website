@@ -315,5 +315,6 @@
   "StreakBroken": "Chuỗi đoán đúng đã bị ngắt",
   "SettingsTitle": "Cài đặt",
   "LanguageLabel": "Ngôn ngữ",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Cùng ngày năm ngoái: cao nhất {temp}"
 }

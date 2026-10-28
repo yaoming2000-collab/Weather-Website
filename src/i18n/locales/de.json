@@ -315,5 +315,6 @@
   "StreakBroken": "Serie gerissen",
   "SettingsTitle": "Einstellungen",
   "LanguageLabel": "Sprache",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Gleicher Tag im Vorjahr: max. {temp}"
 }

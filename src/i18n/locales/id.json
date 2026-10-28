@@ -315,5 +315,6 @@
   "StreakBroken": "Rekor beruntun terputus",
   "SettingsTitle": "Pengaturan",
   "LanguageLabel": "Bahasa",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Hari yang sama tahun lalu: maks. {temp}"
 }

@@ -315,5 +315,6 @@
   "StreakBroken": "Το σερί διακόπηκε",
   "SettingsTitle": "Ρυθμίσεις",
   "LanguageLabel": "Γλώσσα",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Ίδια μέρα πέρσι: μέγιστη {temp}"
 }

@@ -163,3 +163,32 @@ describe('last year data from OpenWeather', () => {
     expect(iconOfWeatherId(741)).toBe('foggy');
   });
 });
+
+describe('OpenWeather replies', () => {
+  const reply = (days: number, from = '2025-10-28', status = 200) => async () =>
+    new Response(
+      JSON.stringify({ data: Array.from({ length: days }, (_, i) => ({ dt: Date.parse(`${from}T00:00:00Z`) / 1000 + i * 86400, temp: { max: 10 + i, min: i }, weather: [{ id: 800 }] })) }),
+      { status },
+    );
+
+  it('accepts a full 10-day block', async () => {
+    const { OpenWeatherHistory } = await import('../src/weather/history');
+    const days = await new OpenWeatherHistory('k', reply(10)).days(1, 2, '2025-10-28');
+    expect(days).toHaveLength(10);
+    expect(days[0]!.date).toBe('2025-10-28');
+  });
+
+  it('refuses to cache a short or shifted reply, and treats 400 as "not available"', async () => {
+    const { OpenWeatherHistory } = await import('../src/weather/history');
+    await expect(new OpenWeatherHistory('k', reply(3)).days(1, 2, '2025-10-28')).rejects.toMatchObject({ status: 502 });
+    await expect(new OpenWeatherHistory('k', reply(10, '2025-10-27')).days(1, 2, '2025-10-28')).rejects.toMatchObject({ status: 502 });
+    await expect(new OpenWeatherHistory('k', reply(0, '2025-10-28', 400)).days(1, 2, '2025-10-28')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('uses the answer fixed earlier when today cannot be computed now', () => {
+    const c = compareToday(day('2026-10-22', 20), past('2025-10-22', 15))!;
+    const f = withFrozenComparison({ comparison: null, label: null, series: [], rain: null, nowcast: null, life: [], days: [] }, c);
+    expect(f.comparison).toBe(c);
+    expect(f.label?.comparison).toBe(c);
+  });
+});

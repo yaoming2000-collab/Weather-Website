@@ -315,5 +315,6 @@
   "StreakBroken": "Reeks onderbroken",
   "SettingsTitle": "Instellingen",
   "LanguageLabel": "Taal",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Zelfde dag vorig jaar: max. {temp}"
 }

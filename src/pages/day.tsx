@@ -1,5 +1,3 @@
-import { CLIMATE_LEVEL_COLORS } from '../config/features';
-import { climateTone, wordingKey } from '../features/climate';
 import { intlLocale, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { cityPath } from '../routing/urls';
@@ -9,7 +7,7 @@ import type { DailyPoint } from '../weather/types';
 import { AdSlot, DASH, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { placeholderDayHours } from './placeholders';
-import { cityPageData, Compass, DayRow, Delta, devNote, HourlyStrip, Jump, pageSky, rich, type PageProps } from './home';
+import { cityPageData, Compass, DayRow, devNote, HourlyStrip, Jump, pageSky, rich, type PageProps } from './home';
 
 /** 日期："10月27日 星期二"之类，按语言格式化 */
 export function longDate(date: string, lang: Lang): string {
@@ -84,26 +82,12 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
               <span class="sep">/</span>
               <Temp c={d.minTemp} />
             </p>
-            {point?.delta !== null && point?.delta !== undefined && point.level ? (
-              <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style={`--lv:${CLIMATE_LEVEL_COLORS[point.level]}`}>
-                <i />
-                <span>
-                  {point.level === 'normal'
-                    ? t(lang, 'ClimateLabel_normal')
-                    : rich(lang, `ClimateLabel_${wordingKey(point.level, climateTone(point.lastMaxTemp ?? 15))}`, { delta: <Delta c={point.delta} /> })}
-                </span>
-                {G.chevron('flip')}
-              </a>
-            ) : (
-              // 没有往年数据时保留同样大小的标签，页面不跳
-              <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style="--lv:var(--faint)">
-                <i />
-                <span>
-                  {t(lang, 'ClimateTitle')} {DASH}
-                </span>
-                {G.chevron('flip')}
-              </a>
-            )}
+            {/* 明天、后天只显示去年同一天的最高温，不说"热/冷"：不提前透露那天的猜一猜答案，也不会出现"去年今天"的错误说法 */}
+            <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style="--lv:var(--faint)">
+              <i />
+              <span>{point?.lastMaxTemp != null ? rich(lang, 'DayLastYearHigh', { temp: <Temp c={point.lastMaxTemp} /> }) : <>{t(lang, 'ClimateTitle')} {DASH}</>}</span>
+              {G.chevron('flip')}
+            </a>
           </section>
           <EarlyUnits />
 

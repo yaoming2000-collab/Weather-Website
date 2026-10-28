@@ -50,6 +50,8 @@ export interface FeatureStore {
    * 今天的预报一天里会更新，答案中途翻转会让"连续猜对"不公平（Darren 2026-10-28）。
    */
   freezeComparison(cityId: string, comparison: TodayComparison): Promise<TodayComparison>;
+  /** 只读：这个城市这一天已经定下的结果（今天的数据这次没取到时用） */
+  frozenComparison(cityId: string, date: string): Promise<TodayComparison | null>;
   /** 删除过期数据（每天由定时任务调用） */
   cleanup(nowMs: number): Promise<void>;
 }
@@ -114,6 +116,10 @@ export class MemoryFeatureStore implements FeatureStore {
     if (existing) return existing;
     this.frozen.set(key, comparison);
     return comparison;
+  }
+
+  async frozenComparison(cityId: string, date: string): Promise<TodayComparison | null> {
+    return this.frozen.get(`${cityId}|${date}`) ?? null;
   }
 
   async addGuess(cityId: string, date: string, choice: GuessChoice): Promise<GuessCounts> {
@@ -225,7 +231,38 @@ export class D1FeatureStore implements FeatureStore {
       .run();
   }
 
+  /** 同一个 Worker 实例里已经定下的结果，省掉重复的数据库往返（定下后不会再变） */
+  private readonly frozenLocal = new Map<string, TodayComparison>();
+
+  async frozenComparison(cityId: string, date: string): Promise<TodayComparison | null> {
+    const key = `${cityId}|${date}`;
+    const local = this.frozenLocal.get(key);
+    if (local) return local;
+    const row = await this.db.prepare('SELECT data FROM daily_comparisons WHERE city_id = ?1 AND date = ?2').bind(cityId, date).first<{ data: string }>();
+    try {
+      const v = row ? (JSON.parse(row.data) as TodayComparison) : null;
+      if (v) this.remember(key, v);
+      return v;
+    } catch {
+      return null;
+    }
+  }
+
+  private remember(key: string, v: TodayComparison) {
+    if (this.frozenLocal.size > 2000) this.frozenLocal.clear();
+    this.frozenLocal.set(key, v);
+  }
+
   async freezeComparison(cityId: string, comparison: TodayComparison): Promise<TodayComparison> {
+    const key = `${cityId}|${comparison.date}`;
+    const local = this.frozenLocal.get(key);
+    if (local) return local;
+    const v = await this.freezeInDb(cityId, comparison);
+    this.remember(key, v);
+    return v;
+  }
+
+  private async freezeInDb(cityId: string, comparison: TodayComparison): Promise<TodayComparison> {
     // 没有就写入，有就保持原样；然后读出当天的那一条（并发写入时也只有第一条生效）
     const [, read] = await this.db.batch<{ data: string }>([
       this.db

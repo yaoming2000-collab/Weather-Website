@@ -315,5 +315,6 @@
   "StreakBroken": "A sequência foi interrompida",
   "SettingsTitle": "Configurações",
   "LanguageLabel": "Idioma",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Mesmo dia do ano passado: máx. {temp}"
 }

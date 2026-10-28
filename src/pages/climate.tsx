@@ -169,8 +169,8 @@ export function ClimatePage(p: PageProps) {
       <SubBar location={loc} channel={channel} lang={lang} title={title} />
 
       {!cmp ? (
-        // 今天没出题：连续猜对天数不算断（client/main.ts markSkippedDay）
-        <section class="card" data-no-question data-city={loc.id} data-date={bundle.today}>
+        // 今天没出题（一直没有去年数据）：连续猜对天数不算断（client/main.ts markSkippedDay）；临时取不到时不算，等会儿还会出题
+        <section class="card" {...(transient ? {} : { 'data-no-question': '', 'data-city': loc.id, 'data-date': bundle.today })}>
           <p class="lead">{t(lang, transient ? 'TryLater' : 'ClimateUnavailable')}</p>
         </section>
       ) : (

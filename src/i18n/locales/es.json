@@ -315,5 +315,6 @@
   "StreakBroken": "Se rompió la racha",
   "SettingsTitle": "Ajustes",
   "LanguageLabel": "Idioma",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Mismo día del año pasado: máx. {temp}"
 }

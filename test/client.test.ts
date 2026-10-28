@@ -130,3 +130,20 @@ describe('guess streak', () => {
     expect(readStreaks('{"1":{"cur":"x"}}')).toEqual({});
   });
 });
+
+describe('guess streak edge cases', () => {
+  it('counts a real guess made after a "no question" mark on the same day', async () => {
+    const { recordResult, recordSkip } = await import('../client/lib/streak');
+    let s = recordResult(undefined, '2026-10-20', true);
+    s = recordSkip(s, '2026-10-21')!;
+    expect(s.skipped).toBe(true);
+    s = recordResult(s, '2026-10-21', true);
+    expect(s).toEqual({ cur: 2, best: 2, last: '2026-10-21' });
+  });
+
+  it('ignores a guess for a day before the last one (an old cached page)', async () => {
+    const { recordResult } = await import('../client/lib/streak');
+    const s = recordResult(recordResult(undefined, '2026-10-21', true), '2026-10-22', true);
+    expect(recordResult(s, '2026-10-21', false)).toBe(s);
+  });
+});

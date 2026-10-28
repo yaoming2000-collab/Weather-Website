@@ -117,13 +117,14 @@ export function createApp(
       if (!success) return c.json({ error: 'too many requests' }, 429);
     }
     try {
-      let items = await c.var.weather.search(q, lang);
-      let complete = true;
+      const found = await c.var.weather.searchDetailed(q, lang, (p) => waitUntil(c, p));
+      let items = found.items;
+      let complete = found.complete;
       // Foreca 不支持的语言：搜索结果是英文名，用 Wikidata 换成本地名字（保留英文的州/省，同名城市分得清）
       if (c.var.weather.needsWikidataNames(lang)) {
         const r = await c.var.weather.localizeWithin(items, lang, NAME_BUDGET_MS, (p) => waitUntil(c, p), { keepAdmin: true });
         items = r.locs;
-        complete = r.complete;
+        complete = complete && r.complete;
       }
       // 城市名还没查好时只缓存 1 分钟，下次就是本地名字
       c.header('Cache-Control', `public, max-age=${complete ? 3600 : 60}`);
@@ -448,13 +449,18 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
     const bundle = { ...raw, location: named.locs[0] ?? base, missing: named.complete ? raw.missing : [...raw.missing, 'names'] };
     const now = c.var.weather.nowMs();
     // 当天的"和去年比"结果以第一次算出的为准（数据库最多等 0.8 秒，超时就用刚算出的）
+    // 这次算不出来（今天的预报或去年数据临时没取到）时，用当天早些时候定下的
     const computed = cityFeatures(bundle, now);
-    const frozen = computed.comparison
-      ? await withBudget(c.var.features.freezeComparison(raw.location.id, computed.comparison), FREEZE_BUDGET_MS).catch((e) => {
-          console.warn('[climate] freeze failed', e);
-          return null;
-        })
-      : null;
+    const store = c.var.features;
+    const frozen = await withBudget(
+      computed.comparison ? store.freezeComparison(raw.location.id, computed.comparison) : store.frozenComparison(raw.location.id, raw.today),
+      FREEZE_BUDGET_MS,
+    ).catch((e) => {
+      console.warn('[climate] freeze failed', e);
+      // 没确认当天的结果：页面只缓存 1 分钟，免得这段时间里按另一个答案判
+      if (computed.comparison) bundle.missing.push('freeze');
+      return null;
+    });
     const features = withFrozenComparison(computed, frozen);
     // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
     // 排行榜存英文名（显示时再按页面语言换），所以用原始的地点信息

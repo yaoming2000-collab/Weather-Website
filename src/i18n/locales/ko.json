@@ -315,5 +315,6 @@
   "StreakBroken": "연속 기록이 끊겼어요",
   "SettingsTitle": "설정",
   "LanguageLabel": "언어",
-  "SearchAreaPlace": "{area}({place})"
+  "SearchAreaPlace": "{area}({place})",
+  "DayLastYearHigh": "작년 같은 날: 최고 {temp}"
 }

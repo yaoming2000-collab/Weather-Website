@@ -315,5 +315,6 @@
   "StreakBroken": "انقطعت السلسلة",
   "SettingsTitle": "الإعدادات",
   "LanguageLabel": "اللغة",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "اليوم نفسه في العام الماضي: العظمى {temp}"
 }

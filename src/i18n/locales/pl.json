@@ -315,5 +315,6 @@
   "StreakBroken": "Seria przerwana",
   "SettingsTitle": "Ustawienia",
   "LanguageLabel": "Język",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Ten sam dzień rok temu: maks. {temp}"
 }

@@ -315,5 +315,6 @@
   "StreakBroken": "Seri bozuldu",
   "SettingsTitle": "Ayarlar",
   "LanguageLabel": "Dil",
-  "SearchAreaPlace": "{area} ({place})"
+  "SearchAreaPlace": "{area} ({place})",
+  "DayLastYearHigh": "Geçen yıl aynı gün: en yüksek {temp}"
 }

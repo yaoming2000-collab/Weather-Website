@@ -270,9 +270,9 @@ function LifeRow(props: { p: PageProps }) {
 
 /**
  * 猜过之后才把首页标签换成结果（首次绘制前做，见 GUESS_TAG_SCRIPT；页面更新后由 client/main.ts revealGuessTags 再做一次）。
- * 猜一猜的记录在 localStorage weather.guess.v1，键是"城市|日期"。
+ * 猜一猜的记录在 localStorage weather.guess.v2（client/lib/interact.ts GUESS_KEY），键是"城市|日期"。
  */
-export const GUESS_TAG_SCRIPT = `(function(){try{var b=JSON.parse(localStorage.getItem('weather.guess.v1')||'{}');
+export const GUESS_TAG_SCRIPT = `(function(){try{var b=JSON.parse(localStorage.getItem('weather.guess.v2')||'{}');
 var t=document.querySelectorAll('[data-guess-tag]');for(var i=0;i<t.length;i++){var a=t[i];if(!b[a.getAttribute('data-guess-tag')])continue;
 var tpl=a.querySelector('template');var s=a.querySelector('[data-tag-text]');if(!tpl||!s)continue;s.innerHTML=tpl.innerHTML;a.style.setProperty('--lv',a.getAttribute('data-result-color'));a.removeAttribute('data-guess-tag')}}catch(e){}})()`;
 
@@ -287,8 +287,11 @@ export function ClimateTag(props: { p: PageProps }) {
   const href = cityPath(p.channel, p.lang, p.bundle.location.id, 'climate');
   // 没有去年数据时保留同样大小的标签（"和去年比 --"），点进去看原因
   if (!label) {
+    // 一直没有去年数据（不是临时取不到）：今天没出题，连续猜对天数不算断（client/main.ts markSkippedDay）
+    const transient = p.bundle.missing.some((m) => m === 'lastYear' || m === 'daily');
+    const skip = transient ? {} : { 'data-no-question': '', 'data-city': p.bundle.location.id, 'data-date': p.bundle.today };
     return (
-      <a class="vs" data-nav href={href} style="--lv:var(--faint)">
+      <a class="vs" data-nav href={href} style="--lv:var(--faint)" {...skip}>
         <i />
         <span>
           {t(p.lang, 'ClimateTitle')} {DASH}
