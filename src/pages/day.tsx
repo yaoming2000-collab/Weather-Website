@@ -91,13 +91,22 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
                 </span>
                 {G.chevron('flip')}
               </a>
-            ) : null}
+            ) : (
+              // 没有往年数据时保留同样大小的标签，页面不跳
+              <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style="--lv:var(--faint)">
+                <i />
+                <span>
+                  {t(lang, 'ClimateTitle')} {DASH}
+                </span>
+                {G.chevron('flip')}
+              </a>
+            )}
           </section>
 
-          {hours.length >= 3 ? (
+          {hours.length > 0 ? (
             <section class="card">
               <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} />
-              <HourlyStrip hours={hours} days={features.days} lang={lang} />
+              <HourlyStrip hours={hours} days={features.days} lang={lang} nowMs={p.nowMs} />
             </section>
           ) : null}
 
@@ -232,7 +241,8 @@ export function WeekPage(p: PageProps) {
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
   const avgHi = avg(withMax.map((d) => d.maxTemp!));
   const avgLo = avg(withMin.map((d) => d.minTemp!));
-  const rainy = week.filter((d) => (d.precipProb ?? 0) >= 50).length;
+  // 一天的降水概率都没有时显示 --，不显示 0 天
+  const rainy = week.some((d) => d.precipProb !== null) ? week.filter((d) => (d.precipProb ?? 0) >= 50).length : DASH;
   const total = week.reduce((a, d) => a + (d.precipAccum ?? 0), 0);
   const range = tempRange(week);
   const subFor = (i: number) => (i === 0 ? '' : i === 1 ? 'tomorrow' : i === 2 ? 'day-after' : null);

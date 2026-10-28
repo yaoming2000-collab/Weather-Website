@@ -301,5 +301,11 @@
   "UnitsTitle": "単位",
   "TemperatureLabel": "気温",
   "WindSpeedLabel": "風速",
-  "PrecipTodayNote": "今日の降水確率は{percent}%"
+  "PrecipTodayNote": "今日の降水確率は{percent}%",
+  "Dash": "--",
+  "TryLater": "現在このデータを取得できません。数分後にもう一度お試しください。",
+  "Retry": "再試行",
+  "UpdatedHoursAgo": "{n}時間前に更新",
+  "OfflineNotice": "オフラインです。前回保存した予報を表示しています。",
+  "StorageUnavailable": "ブラウザに設定を保存できません。ページを閉じると、保存した都市と単位の設定は失われます。"
 }

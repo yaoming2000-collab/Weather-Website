@@ -301,5 +301,11 @@
   "UnitsTitle": "단위",
   "TemperatureLabel": "기온",
   "WindSpeedLabel": "풍속",
-  "PrecipTodayNote": "오늘 강수 확률 {percent}%"
+  "PrecipTodayNote": "오늘 강수 확률 {percent}%",
+  "Dash": "--",
+  "TryLater": "지금은 이 데이터를 불러올 수 없습니다. 몇 분 후에 다시 시도해 주세요.",
+  "Retry": "다시 시도",
+  "UpdatedHoursAgo": "{n}시간 전 업데이트",
+  "OfflineNotice": "오프라인 상태입니다. 마지막으로 저장된 예보를 표시합니다.",
+  "StorageUnavailable": "브라우저에 설정을 저장할 수 없어 페이지를 닫으면 저장한 도시와 단위 설정이 사라집니다."
 }

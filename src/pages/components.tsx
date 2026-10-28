@@ -10,7 +10,8 @@ import { G } from './glyphs';
 import { discPosition, skyVars, type Sky } from './sky';
 import { CSS } from './styles';
 
-export const DASH = '—';
+/** 缺数据时显示的符号（Darren 2026-10-28：统一用 "--"，不用 0，0 是真实读数） */
+export const DASH = '--';
 
 export const round = (n: number | null | undefined): string => (n === null || n === undefined ? DASH : String(Math.round(n)));
 
@@ -61,6 +62,11 @@ export function Precip(props: { mm: number | null | undefined }) {
 }
 
 export function Icon(props: { icon: string; size?: number; cls?: string; eager?: boolean; alt?: string }) {
+  // 占位：没有数据时画一个同样大小的空图标位，布局不变
+  if (!props.icon) {
+    const s = props.size ?? 32;
+    return <span class={`ico-ph${props.cls ? ` ${props.cls}` : ''}`} style={`width:${s}px;height:${s}px`} aria-hidden="true" />;
+  }
   return (
     <img
       class={props.cls}
@@ -319,6 +325,9 @@ export function clientStrings(lang: Lang): Record<string, string> {
     'NowLabel',
     'UpdatedJustNow',
     'UpdatedMinutesAgo',
+    'UpdatedHoursAgo',
+    'OfflineNotice',
+    'StorageUnavailable',
     'AddToMyCities',
     'AddedToMyCities',
     'RemoveFromMyCities',

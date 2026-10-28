@@ -203,16 +203,27 @@ export function CitiesPage(props: { channel: Channel; lang: Lang; providerName: 
   );
 }
 
-export function MessagePage(props: { lang: Lang; titleKey: string; textKey: string }) {
+/**
+ * 出错页（找不到、服务暂时不可用）。
+ * homeHref 保留渠道、语言和 session 等参数；retry 时显示"重试"按钮，10 秒后自动重试一次（client/main.ts）。
+ */
+export function MessagePage(props: { lang: Lang; titleKey: string; textKey: string; homeHref: string; retry: boolean }) {
   const { lang } = props;
   return (
-    <Layout lang={lang} title={t(lang, props.titleKey)} pageData={{}}>
+    <Layout lang={lang} title={t(lang, props.titleKey)} pageData={{ page: 'message' }}>
       <section class="msg">
         <h1>{t(lang, props.titleKey)}</h1>
         <p style="color:var(--mut)">{t(lang, props.textKey)}</p>
-        <a class="btn" href="/">
-          {t(lang, 'BackToHome')}
-        </a>
+        <div class="msg-actions">
+          {props.retry ? (
+            <button type="button" class="btn" data-retry>
+              {t(lang, 'Retry')}
+            </button>
+          ) : null}
+          <a class={props.retry ? 'btn ghost' : 'btn'} href={props.homeHref}>
+            {t(lang, 'BackToHome')}
+          </a>
+        </div>
       </section>
     </Layout>
   );

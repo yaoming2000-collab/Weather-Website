@@ -1,7 +1,7 @@
 import type { Child } from 'hono/jsx';
 import type { Channel } from '../config/channels';
 import { CLIMATE_LEVEL_COLORS } from '../config/features';
-import { HOURS_SHOWN } from '../config/thresholds';
+import { HOURS_SHOWN, STALE_AFTER_MIN } from '../config/thresholds';
 import type { CityFeatures } from '../features';
 import type { LifeIndexKey } from '../features/life';
 import { intlLocale, type Lang } from '../i18n/languages';
@@ -26,6 +26,7 @@ import type { CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
 import { AdSlot, DASH, Distance, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
 import { G } from './glyphs';
+import { isPlaceholder } from './placeholders';
 import { computeSky, displayIcon, type Sky } from './sky';
 
 export interface PageProps {
@@ -97,6 +98,7 @@ const pct = (n: number | null | undefined) => (n === null || n === undefined ? '
 /** 一天的温度条；today 时在条上标出现在的温度 */
 export function DayRow(props: { d: DailyPoint; lang: Lang; range: { min: number; span: number }; nowTemp?: number | null }) {
   const { d, lang, range } = props;
+  const known = d.minTemp !== null || d.maxTemp !== null;
   const lo = d.minTemp ?? d.maxTemp ?? 0;
   const hi = d.maxTemp ?? d.minTemp ?? 0;
   const left = ((lo - range.min) / range.span) * 100;
@@ -116,7 +118,7 @@ export function DayRow(props: { d: DailyPoint; lang: Lang; range: { min: number;
         <Temp c={d.minTemp} />
       </span>
       <span class="bar">
-        <i style={`inset-inline-start:${left.toFixed(1)}%;width:${width.toFixed(1)}%;background:${tempGradient(lo, hi)}`} />
+        {known ? <i style={`inset-inline-start:${left.toFixed(1)}%;width:${width.toFixed(1)}%;background:${tempGradient(lo, hi)}`} /> : null}
         {nowPos !== null ? <b data-now-dot style={`inset-inline-start:${nowPos.toFixed(1)}%`} /> : null}
       </span>
       <span class="hi">
@@ -151,15 +153,17 @@ function hourItems(hours: HourlyPoint[], days: DailyPoint[]): HourItem[] {
   return items;
 }
 
-export function HourlyStrip(props: { hours: HourlyPoint[]; days: DailyPoint[]; lang: Lang }) {
+export function HourlyStrip(props: { hours: HourlyPoint[]; days: DailyPoint[]; lang: Lang; nowMs: number }) {
   const { lang } = props;
+  // 第一格只有在已经开始（包含现在）时才叫"现在"；明天、后天页面的第一格是 00:00
+  const isNow = (time: string, i: number) => i === 0 && Date.parse(time) <= props.nowMs;
   return (
     <div class="hours">
       {hourItems(props.hours, props.days).map((it, i) =>
         it.kind === 'hour' ? (
           <div class="hour" data-time={it.h.time}>
             <div class="t" data-hour-label={hourLabel(it.h.time)}>
-              {i === 0 ? t(lang, 'NowLabel') : hourLabel(it.h.time)}
+              {isNow(it.h.time, i) ? t(lang, 'NowLabel') : hourLabel(it.h.time)}
             </div>
             <Icon icon={it.h.icon} size={34} alt={t(lang, conditionKey(it.h.icon))} />
             <div class="p">{it.h.precipProb !== null && it.h.precipProb >= 20 ? pct(it.h.precipProb) : ''}</div>
@@ -182,10 +186,22 @@ export function HourlyStrip(props: { hours: HourlyPoint[]; days: DailyPoint[]; l
   );
 }
 
-function Nowcast(props: { f: CityFeatures; lang: Lang }) {
+/**
+ * 降雨时间轴卡片：一直显示。
+ * 没请求逐 15 分钟数据（逐小时预报显示未来 3 小时不太可能下雨）时显示"未来 2 小时无雨"；
+ * 数据没取到时显示"暂时无法获取"。
+ */
+function Nowcast(props: { f: CityFeatures; lang: Lang; fallback: 'dry' | 'unavailable' }) {
   const n = props.f.nowcast;
   const { lang } = props;
-  if (!n) return null;
+  if (!n) {
+    return (
+      <section class="card" data-nowcast={props.fallback}>
+        <Sec icon={G.umbrella()} title={t(lang, 'NowcastTitle')} />
+        <div class="nc-msg">{t(lang, props.fallback === 'dry' ? 'Nowcast_dry' : 'Unavailable')}</div>
+      </section>
+    );
+  }
   if (n.state === 'dry') {
     return (
       <section class="card" data-nowcast="dry">
@@ -228,7 +244,6 @@ function LifeRow(props: { p: PageProps }) {
   const { p } = props;
   const { lang, channel } = p;
   const items = p.features.life;
-  if (items.length === 0) return null;
   return (
     <section class="card">
       <Sec icon={G.sun()} title={t(lang, 'LifeTitle')} />
@@ -238,11 +253,11 @@ function LifeRow(props: { p: PageProps }) {
             <span class="ico">{LIFE_GLYPH[x.key]()}</span>
             <span class="n">
               <b>{t(lang, `LifeTitle_${x.key}`)}</b>
-              <span>{t(lang, x.reasonKey, x.vars)}</span>
+              <span>{x.reasonKey ? t(lang, x.reasonKey, x.vars) : DASH}</span>
             </span>
             <span class="r">
               {x.rating ? <i class={`dot ${x.rating}`} /> : null}
-              {t(lang, x.summaryKey)}
+              {x.summaryKey ? t(lang, x.summaryKey) : DASH}
               {G.chevron('flip')}
             </span>
           </a>
@@ -256,9 +271,20 @@ function LifeRow(props: { p: PageProps }) {
 export function ClimateTag(props: { p: PageProps }) {
   const { p } = props;
   const label = p.features.label;
-  if (!label) return null;
-  const c = label.comparison;
   const href = cityPath(p.channel, p.lang, p.bundle.location.id, 'climate');
+  // 没有往年数据时保留同样大小的标签（"今天 vs 往年 --"），点进去看原因
+  if (!label) {
+    return (
+      <a class="vs" data-nav href={href} style="--lv:var(--faint)">
+        <i />
+        <span>
+          {t(p.lang, 'ClimateTitle')} {DASH}
+        </span>
+        {G.chevron('flip')}
+      </a>
+    );
+  }
+  const c = label.comparison;
   const text =
     label.mode === 'rain'
       ? t(p.lang, 'ClimateLabel_rain', { n: label.rainDays })
@@ -377,8 +403,11 @@ export function HomePage(p: PageProps) {
   const uvKey = uvLevelKey(c.uvIndex);
   const pKey = pressureKey(c.pressure);
   const sky = pageSky(p);
-  const daylight = sky.phase !== 'night' ? sky.arc : null;
+  // 没有日出日落时间时不画太阳（位置是估的）
+  const daylight = sky.phase !== 'night' && today?.sunrise && today?.sunset ? sky.arc : null;
   const heroIcon = displayIcon(c.icon, sky);
+  // 数据的实际年龄（接口故障时用的是旧数据）；页面缓存期间由浏览器脚本继续更新这行字
+  const updMins = Math.max(0, Math.floor((p.nowMs - current.fetchedAt) / 60_000));
 
   return (
     <Layout
@@ -409,24 +438,23 @@ export function HomePage(p: PageProps) {
           {'  '}
           <bdi>{t(lang, 'LowShort')} <b><Temp c={today?.minTemp} /></b></bdi>
         </p>
-        {c.feelsLike !== null && c.temperature !== null && Math.round(c.feelsLike) !== Math.round(c.temperature) ? (
-          <p class="feels">
-            {t(lang, 'WeatherFeelsLike')} <Temp c={c.feelsLike} />
-          </p>
-        ) : null}
+        {/* 体感温度一直显示（和实际温度相同也显示），每个城市的首屏高度一致 */}
+        <p class="feels">
+          {t(lang, 'WeatherFeelsLike')} <Temp c={c.feelsLike} />
+        </p>
         <ClimateTag p={p} />
-        <p class="upd" data-fetched={String(current.fetchedAt)}>
-          {t(lang, 'UpdatedJustNow')}
+        <p class={`upd${updMins > STALE_AFTER_MIN ? ' stale' : ''}`} data-fetched={String(current.fetchedAt)}>
+          {updMins < 1 ? t(lang, 'UpdatedJustNow') : updMins < 60 ? t(lang, 'UpdatedMinutesAgo', { n: updMins }) : t(lang, 'UpdatedHoursAgo', { n: Math.floor(updMins / 60) })}
         </p>
       </section>
 
       <div data-live="nowcast" style="display:contents">
-        <Nowcast f={features} lang={lang} />
+        <Nowcast f={features} lang={lang} fallback={!isPlaceholder(hourly?.data[0] ?? { icon: '' }) && !bundle.missing.includes('nowcast') ? 'dry' : 'unavailable'} />
       </div>
 
       <a class="card" data-live="hourly" data-nav href={cityPath(channel, lang, loc.id, 'hourly')}>
         <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} more={t(lang, 'SeeHourlyDetails')} />
-        <HourlyStrip hours={(hourly?.data ?? []).slice(0, HOURS_SHOWN)} days={days} lang={lang} />
+        <HourlyStrip hours={(hourly?.data ?? []).slice(0, HOURS_SHOWN)} days={days} lang={lang} nowMs={p.nowMs} />
       </a>
 
       <AdSlot slot="home_1" height={100} lang={lang} />

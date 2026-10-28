@@ -211,6 +211,7 @@ body{--cl:255,255,255}
 .hl-line b{font-weight:500;color:var(--fg)}
 .feels{margin:2px 0 0;font-size:14px;color:var(--faint)}
 .upd{margin:10px 0 0;font-size:12px;color:var(--faint)}
+.upd.stale{color:#fde68a;font-weight:600}
 .vs{display:inline-flex;align-items:center;gap:8px;margin-top:14px;padding:7px 12px 7px 10px;border-radius:999px;font-size:14px;font-weight:550;text-shadow:none;
   background:rgba(255,255,255,.16)}
 .vs i{width:10px;height:10px;border-radius:50%;background:var(--lv);box-shadow:0 0 0 3px color-mix(in srgb,var(--lv) 35%,transparent)}
@@ -229,6 +230,9 @@ a.card,.tile{transition:transform .15s var(--ease)}
 
 /* 降雨时间轴 */
 .nc-msg{font-size:17px;font-weight:550;line-height:1.35}
+.ico-ph{display:inline-block;flex:none;border-radius:50%;background:rgba(255,255,255,.12)}
+.ph-chart{display:grid;place-items:center;aspect-ratio:340/150;margin-top:4px;color:var(--faint);font-size:20px}
+.cmp-bars i.ph{width:0;min-width:0}
 .nc-bars{display:grid;grid-template-columns:repeat(8,1fr);align-items:end;gap:5px;height:56px;margin:14px 0 6px;padding-bottom:1px;border-bottom:1px solid var(--line)}
 .nc-bars span{display:block;border-radius:5px 5px 2px 2px;background:var(--rain);min-height:3px;opacity:.95}
 .nc-bars span[data-i="0"]{background:rgba(255,255,255,.25)}
@@ -255,7 +259,7 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .day:first-of-type{border-top:0}
 .day .wd{font-weight:550;font-size:16px;white-space:nowrap}
 .day[data-today] .wd{font-weight:700}
-.day .ic{position:relative;text-align:center;line-height:0}
+.day .ic{position:relative;text-align:center;line-height:0;min-height:43px;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .day .ic img{width:30px;height:30px}
 .day .ic small{display:block;margin-top:1px;font-size:10.5px;font-weight:650;line-height:1.1;color:var(--rain)}
 .day .lo{color:var(--faint);text-align:end;font-size:16px}
@@ -457,4 +461,9 @@ footer a{text-decoration:underline;text-underline-offset:2px;text-decoration-col
 .dev{position:relative;z-index:2;padding:6px 16px;background:#3b2f12;color:#fbd38d;font-size:12px;text-align:center}
 .msg{padding:48px 0;text-align:center}
 .msg h1{font-size:22px}
+.msg-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:8px}
+.msg-actions .btn{height:44px;padding:0 20px;font-weight:600}
+.btn.ghost{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.notice{position:fixed;z-index:50;inset-inline:16px;bottom:calc(16px + env(safe-area-inset-bottom));max-width:480px;margin:0 auto;padding:12px 16px;border-radius:var(--r-sm);
+  background:rgba(15,23,42,.92);color:#fff;font-size:14px;line-height:1.4;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.3)}
 `;

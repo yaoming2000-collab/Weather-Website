@@ -301,5 +301,11 @@
   "UnitsTitle": "Unități",
   "TemperatureLabel": "Temperatură",
   "WindSpeedLabel": "Viteza vântului",
-  "PrecipTodayNote": "Azi, șanse de ploaie: {percent}%"
+  "PrecipTodayNote": "Azi, șanse de ploaie: {percent}%",
+  "Dash": "--",
+  "TryLater": "Momentan aceste date nu pot fi încărcate. Încercați din nou peste câteva minute.",
+  "Retry": "Încearcă din nou",
+  "UpdatedHoursAgo": "Actualizat acum {n} h",
+  "OfflineNotice": "Sunteți offline. Se afișează ultima prognoză salvată.",
+  "StorageUnavailable": "Browserul nu salvează setările, așa că orașele salvate și unitățile se vor pierde la închiderea paginii."
 }

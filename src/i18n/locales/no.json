@@ -301,5 +301,11 @@
   "UnitsTitle": "Enheter",
   "TemperatureLabel": "Temperatur",
   "WindSpeedLabel": "Vindhastighet",
-  "PrecipTodayNote": "I dag {percent}% sjanse for regn"
+  "PrecipTodayNote": "I dag {percent}% sjanse for regn",
+  "Dash": "--",
+  "TryLater": "Disse dataene kan ikke hentes akkurat nå. Prøv igjen om noen minutter.",
+  "Retry": "Prøv igjen",
+  "UpdatedHoursAgo": "Oppdatert for {n} t siden",
+  "OfflineNotice": "Du er frakoblet. Viser sist lagrede varsel.",
+  "StorageUnavailable": "Nettleseren lagrer ikke innstillinger, så lagrede byer og enheter forsvinner når du lukker siden."
 }

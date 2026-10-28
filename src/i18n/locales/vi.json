@@ -301,5 +301,11 @@
   "UnitsTitle": "Đơn vị",
   "TemperatureLabel": "Nhiệt độ",
   "WindSpeedLabel": "Tốc độ gió",
-  "PrecipTodayNote": "Hôm nay, khả năng mưa {percent}%"
+  "PrecipTodayNote": "Hôm nay, khả năng mưa {percent}%",
+  "Dash": "--",
+  "TryLater": "Hiện không thể tải dữ liệu này. Vui lòng thử lại sau vài phút.",
+  "Retry": "Thử lại",
+  "UpdatedHoursAgo": "Cập nhật {n} giờ trước",
+  "OfflineNotice": "Bạn đang ngoại tuyến. Đang hiển thị dự báo đã lưu gần nhất.",
+  "StorageUnavailable": "Trình duyệt không lưu được cài đặt, nên thành phố đã lưu và đơn vị sẽ mất khi đóng trang này."
 }

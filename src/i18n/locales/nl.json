@@ -301,5 +301,11 @@
   "UnitsTitle": "Eenheden",
   "TemperatureLabel": "Temperatuur",
   "WindSpeedLabel": "Windsnelheid",
-  "PrecipTodayNote": "Vandaag {percent}% kans op regen"
+  "PrecipTodayNote": "Vandaag {percent}% kans op regen",
+  "Dash": "--",
+  "TryLater": "Deze gegevens kunnen nu niet worden geladen. Probeer het over een paar minuten opnieuw.",
+  "Retry": "Opnieuw proberen",
+  "UpdatedHoursAgo": "{n} uur geleden bijgewerkt",
+  "OfflineNotice": "Je bent offline. De laatst opgeslagen verwachting wordt getoond.",
+  "StorageUnavailable": "Je browser slaat geen instellingen op: opgeslagen steden en eenheden gaan verloren als je deze pagina sluit."
 }

@@ -301,5 +301,11 @@
   "UnitsTitle": "Birimler",
   "TemperatureLabel": "Sıcaklık",
   "WindSpeedLabel": "Rüzgar hızı",
-  "PrecipTodayNote": "Bugün yağmur ihtimali %{percent}"
+  "PrecipTodayNote": "Bugün yağmur ihtimali %{percent}",
+  "Dash": "--",
+  "TryLater": "Bu veriler şu anda yüklenemiyor. Lütfen birkaç dakika sonra tekrar deneyin.",
+  "Retry": "Tekrar dene",
+  "UpdatedHoursAgo": "{n} sa önce güncellendi",
+  "OfflineNotice": "Çevrimdışısınız. Son kaydedilen tahmin gösteriliyor.",
+  "StorageUnavailable": "Tarayıcınız ayarları kaydetmiyor; kayıtlı şehirler ve birimler bu sayfa kapatılınca kaybolacak."
 }

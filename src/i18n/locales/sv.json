@@ -301,5 +301,11 @@
   "UnitsTitle": "Enheter",
   "TemperatureLabel": "Temperatur",
   "WindSpeedLabel": "Vindhastighet",
-  "PrecipTodayNote": "Idag {percent}% risk för regn"
+  "PrecipTodayNote": "Idag {percent}% risk för regn",
+  "Dash": "--",
+  "TryLater": "Det går inte att hämta de här uppgifterna just nu. Försök igen om några minuter.",
+  "Retry": "Försök igen",
+  "UpdatedHoursAgo": "Uppdaterad för {n} tim sedan",
+  "OfflineNotice": "Du är offline. Den senast sparade prognosen visas.",
+  "StorageUnavailable": "Webbläsaren sparar inga inställningar, så sparade städer och enheter försvinner när du stänger sidan."
 }
