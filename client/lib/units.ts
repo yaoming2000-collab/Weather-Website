@@ -12,8 +12,10 @@ export interface Units {
   wind: WindUnit;
 }
 
-/** 默认使用华氏度的国家和地区（美国及少数几个使用美制单位的地区） */
-const FAHRENHEIT_REGIONS = new Set(['US', 'LR', 'MM', 'BS', 'BZ', 'KY', 'PW', 'FM', 'MH', 'PR', 'GU', 'VI', 'AS']);
+import { FAHRENHEIT_REGIONS as F_REGIONS } from '../../src/config/units';
+
+/** 默认使用华氏度的国家和地区（见 src/config/units.ts） */
+const FAHRENHEIT_REGIONS = new Set(F_REGIONS);
 /** 风速习惯用 mph 的地区：美国及其属地、英国 */
 const MPH_REGIONS = new Set([...FAHRENHEIT_REGIONS, 'GB', 'IM', 'JE', 'GG']);
 /** 风速习惯用 m/s 的地区：北欧、俄罗斯和部分前苏联国家、日本、韩国 */

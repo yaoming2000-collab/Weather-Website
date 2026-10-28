@@ -6,7 +6,7 @@ import { cityPath } from '../routing/urls';
 import { weekdayLabel } from '../time/cityTime';
 import { conditionKey, tempRange, uvLevelKey, windDirText } from '../weather/derive';
 import type { DailyPoint } from '../weather/types';
-import { AdSlot, DASH, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
+import { AdSlot, DASH, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { cityPageData, Compass, DayRow, Delta, devNote, HourlyStrip, Jump, pageSky, rich, type PageProps } from './home';
 
@@ -102,6 +102,7 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
               </a>
             )}
           </section>
+          <EarlyUnits />
 
           {hours.length > 0 ? (
             <section class="card">
@@ -277,6 +278,7 @@ export function WeekPage(p: PageProps) {
           ) : null}
         </p>
       </section>
+      <EarlyUnits />
 
       <div class="grid">
         {[

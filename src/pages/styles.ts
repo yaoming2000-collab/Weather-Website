@@ -172,7 +172,7 @@ body{--cl:255,255,255}
 .place h1 svg{flex:none;width:18px;height:18px;opacity:.9}
 .region{margin-top:1px;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .region.wrap{white-space:normal;overflow:visible}
-.btn{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:40px;height:40px;padding:0 11px;border-radius:999px;border:0;
+.btn{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:44px;height:44px;padding:0 11px;border-radius:999px;border:0;
   background:var(--chip);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
 .btn:active{background:rgba(255,255,255,.28)}
 /* 单位设置面板（点 °C/°F 按钮弹出） */
@@ -186,14 +186,14 @@ body{--cl:255,255,255}
 .seg button:focus-visible{outline:2px solid #ffd36b;outline-offset:1px}
 .btn svg{width:20px;height:20px}
 .btn[aria-pressed="true"] svg{fill:#ffd36b;stroke:#ffd36b}
-.back{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--mut)}
+.back{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--mut);padding:12px 0;margin:-12px 0}
 .back svg{width:16px;height:16px}
 [dir=rtl] .flip{transform:scaleX(-1)}
 
 /* 明天、后天、一周 */
 .jump{display:flex;gap:8px;margin:6px -16px 0;padding:2px 16px;overflow-x:auto;scrollbar-width:none}
 .jump::-webkit-scrollbar{display:none}
-.jump a{flex:none;display:flex;align-items:center;gap:8px;height:40px;padding:0 12px 0 14px;border-radius:999px;background:var(--chip);
+.jump a{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 14px;border-radius:999px;background:var(--chip);
   font-size:14px;white-space:nowrap}
 .jump a:active{background:rgba(255,255,255,.28)}
 .jump img{width:24px;height:24px}
@@ -216,6 +216,8 @@ body{--cl:255,255,255}
   background:rgba(255,255,255,.16)}
 .vs i{width:10px;height:10px;border-radius:50%;background:var(--lv);box-shadow:0 0 0 3px color-mix(in srgb,var(--lv) 35%,transparent)}
 .vs svg{width:14px;height:14px;opacity:.75}
+/* 标签本身 34px 高，用伪元素把可点区域扩到 44px，不改变布局 */
+.vs{position:relative}.vs::after{content:"";position:absolute;inset:-5px 0}
 
 /* ---------- 卡片 ---------- */
 .card{display:block;margin:12px 0;padding:14px 16px 16px;border-radius:var(--r-lg);background:var(--glass);
@@ -259,9 +261,9 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .day:first-of-type{border-top:0}
 .day .wd{font-weight:550;font-size:16px;white-space:nowrap}
 .day[data-today] .wd{font-weight:700}
-.day .ic{position:relative;text-align:center;line-height:0;min-height:43px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.day .ic{position:relative;text-align:center;line-height:0;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .day .ic img{width:30px;height:30px}
-.day .ic small{display:block;margin-top:1px;font-size:10.5px;font-weight:650;line-height:1.1;color:var(--rain)}
+.day .ic small{display:block;margin-top:1px;font-size:11px;font-weight:650;line-height:1.1;color:var(--rain)}
 .day .lo{color:var(--faint);text-align:end;font-size:16px}
 .day .hi{text-align:end;font-size:16px;font-weight:600}
 .bar{position:relative;height:5px;border-radius:5px;background:rgba(0,0,0,.16)}
@@ -307,7 +309,7 @@ a.card,.tile{transition:transform .15s var(--ease)}
 /* 预报准吗 */
 .vote{display:flex;align-items:center;gap:10px}
 .vote p{flex:1;margin:0;font-size:15px;font-weight:550}
-.vote button{width:46px;height:40px;border:0;border-radius:999px;background:rgba(255,255,255,.14);cursor:pointer;transition:background .2s,transform .15s}
+.vote button{width:48px;height:44px;border:0;border-radius:999px;background:rgba(255,255,255,.14);cursor:pointer;transition:background .2s,transform .15s}
 .vote button:active{transform:scale(.94)}
 .vote button svg{width:20px;height:20px;vertical-align:middle}
 .vote button[aria-pressed=true]{background:#fff;color:#1d3b74}
@@ -323,7 +325,7 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .legend>span{display:inline-flex;align-items:center;gap:6px}
 .sw{display:inline-block;width:14px;height:8px;border-radius:4px;background:#fff}
 .sw.usual{background:rgba(255,255,255,.3)}.sw.lo{background:#9bd4ff}.sw.line{height:2px;border-radius:1px}
-.pill-btn{display:inline-flex;align-items:center;gap:7px;height:40px;padding:0 15px;border:0;border-radius:999px;background:rgba(255,255,255,.16);font-size:14px;font-weight:600;cursor:pointer}
+.pill-btn{display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 15px;border:0;border-radius:999px;background:rgba(255,255,255,.16);font-size:14px;font-weight:600;cursor:pointer}
 .pill-btn svg{width:17px;height:17px}
 .pill-btn:active{background:rgba(255,255,255,.28)}
 
@@ -451,13 +453,13 @@ details.dd .more b{color:var(--fg);font-weight:600}
 
 /* 广告位：预留高度，广告加载前后页面不跳动 */
 .ad{position:relative;display:flex;align-items:center;justify-content:center;max-width:336px;margin:14px auto;border-radius:var(--r-sm)}
-.ad::before{content:attr(data-label);position:absolute;top:4px;font-size:10px;color:var(--faint)}
+.ad::before{content:attr(data-label);position:absolute;top:4px;font-size:11px;color:var(--faint)}
 .ad.preview{border:1px dashed rgba(255,255,255,.35);background:rgba(255,255,255,.05)}
 .ad.preview::after{content:attr(data-slot);font-size:12px;color:var(--faint)}
 
 footer{margin-top:28px;text-align:center;font-size:12px;color:var(--mut)}
-footer nav{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 14px;margin-bottom:8px}
-footer a{text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(255,255,255,.35)}
+footer nav{display:flex;justify-content:center;flex-wrap:wrap;gap:0 4px;margin-bottom:4px}
+footer a{display:inline-flex;align-items:center;min-height:44px;padding:0 6px;text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(255,255,255,.35)}
 .dev{position:relative;z-index:2;padding:6px 16px;background:#3b2f12;color:#fbd38d;font-size:12px;text-align:center}
 .msg{padding:48px 0;text-align:center}
 .msg h1{font-size:22px}

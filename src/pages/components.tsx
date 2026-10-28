@@ -4,7 +4,8 @@ import type { Channel } from '../config/channels';
 import { intlLocale, textDirection, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { citiesPath, cityPath } from '../routing/urls';
-import { iconImage } from '../weather/icons';
+import { iconImage, iconSrcset } from '../weather/icons';
+import { EARLY_TIME_SCRIPT, EARLY_UNITS_SCRIPT } from '../config/units';
 import type { WeatherLocation } from '../weather/types';
 import { G } from './glyphs';
 import { discPosition, skyVars, type Sky } from './sky';
@@ -71,6 +72,8 @@ export function Icon(props: { icon: string; size?: number; cls?: string; eager?:
     <img
       class={props.cls}
       src={`/img/weather/${iconImage(props.icon)}`}
+      srcset={iconSrcset(props.icon)}
+      sizes={`${props.size ?? 32}px`}
       alt={props.alt ?? ''}
       width={props.size ?? 32}
       height={props.size ?? 32}
@@ -296,6 +299,16 @@ export function SubBar(props: { location: WeatherLocation; channel: Channel; lan
   );
 }
 
+/** 放在首屏区块之后：华氏度用户在首次绘制前就看到 °F（见 src/config/units.ts） */
+export function EarlyUnits() {
+  return <script>{raw(EARLY_UNITS_SCRIPT)}</script>;
+}
+
+/** 放在逐小时区块之后：先藏起已经过去的小时（见 src/config/units.ts） */
+export function EarlyTime() {
+  return <script>{raw(EARLY_TIME_SCRIPT)}</script>;
+}
+
 export function Footer(props: { lang: Lang; providerName: string }) {
   const legal = props.lang === 'ar' ? '/ar' : '/en';
   const { lang } = props;
@@ -366,7 +379,8 @@ export function Layout(props: {
   sky?: Sky;
   devNote?: string;
   pageData: Record<string, unknown>;
-  preloadIcon?: string;
+  /** 首屏大图标（LCP），和页面上 Icon 的 icon、size 一致，才能命中预加载 */
+  preloadIcon?: { icon: string; size: number };
   children?: Child;
 }) {
   const { lang } = props;
@@ -380,7 +394,16 @@ export function Layout(props: {
         <meta name="robots" content="noindex" />
         <meta name="theme-color" content={theme} />
         <title>{props.title}</title>
-        {props.preloadIcon ? <link rel="preload" as="image" href={`/img/weather/${iconImage(props.preloadIcon)}`} /> : null}
+        {props.preloadIcon ? (
+          <link
+            rel="preload"
+            as="image"
+            href={`/img/weather/${iconImage(props.preloadIcon.icon)}`}
+            imagesrcset={iconSrcset(props.preloadIcon.icon)}
+            imagesizes={`${props.preloadIcon.size}px`}
+            fetchpriority="high"
+          />
+        ) : null}
         <style>{raw(CSS)}</style>
       </head>
       <body class={sky.className}>

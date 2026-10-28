@@ -4,7 +4,7 @@ import { intlLocale, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { hourLabel, weekdayLabel } from '../time/cityTime';
 import { aqiLevel, aqiPercent, conditionKey, tempRange, uvLevelKey, windDirText } from '../weather/derive';
-import { AdSlot, DASH, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
+import { AdSlot, DASH, EarlyTime, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { cityPageData, DayRow, devNote, pageSky, type PageProps } from './home';
 
@@ -17,7 +17,9 @@ export function HourlyPage(p: PageProps) {
   const title = t(lang, 'Next24Hours');
   const row = (h: (typeof hours)[number], i: number) => (
     <div class="row" data-time={h.time}>
-      <span>{i === 0 ? t(lang, 'NowLabel') : <bdi>{hourLabel(h.time)}</bdi>}</span>
+      <span>
+        <bdi data-hour-label={hourLabel(h.time)}>{i === 0 && Date.parse(h.time) <= p.nowMs ? t(lang, 'NowLabel') : hourLabel(h.time)}</bdi>
+      </span>
       <Icon icon={h.icon} size={32} />
       <div class="main">
         <div>{t(lang, conditionKey(h.icon))}</div>
@@ -34,6 +36,7 @@ export function HourlyPage(p: PageProps) {
     <Layout lang={lang} title={`${title} · ${bundle.location.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={cityPageData(p)}>
       <SubBar location={bundle.location} channel={channel} lang={lang} title={title} />
       <section class="card">{hours.slice(0, 12).map(row)}</section>
+      <EarlyTime />
       <AdSlot slot="sub_1" lang={lang} />
       <section class="card">{hours.slice(12, HOURS_SHOWN).map((h, i) => row(h, i + 12))}</section>
       <AdSlot slot="sub_2" lang={lang} />

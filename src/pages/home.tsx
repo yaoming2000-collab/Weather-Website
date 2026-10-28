@@ -24,7 +24,7 @@ import {
 } from '../weather/derive';
 import type { CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
-import { AdSlot, DASH, Distance, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
+import { AdSlot, DASH, Distance, EarlyTime, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
 import { G } from './glyphs';
 import { isPlaceholder } from './placeholders';
 import { computeSky, displayIcon, type Sky } from './sky';
@@ -346,10 +346,10 @@ export function Compass(props: { deg: number | null }) {
           transform={`rotate(${a} 50 50)`}
         />
       ))}
-      <text x="50" y="24" text-anchor="middle" font-size="9" font-weight="600" fill="#fff">N</text>
-      <text x="79" y="53" text-anchor="middle" font-size="8" fill="rgba(255,255,255,.65)">E</text>
-      <text x="50" y="83" text-anchor="middle" font-size="8" fill="rgba(255,255,255,.65)">S</text>
-      <text x="21" y="53" text-anchor="middle" font-size="8" fill="rgba(255,255,255,.65)">W</text>
+      <text x="50" y="27" text-anchor="middle" font-size="12" font-weight="650" fill="#fff">N</text>
+      <text x="80" y="54.5" text-anchor="middle" font-size="11.5" fill="rgba(255,255,255,.7)">E</text>
+      <text x="50" y="84" text-anchor="middle" font-size="11.5" fill="rgba(255,255,255,.7)">S</text>
+      <text x="20" y="54.5" text-anchor="middle" font-size="11.5" fill="rgba(255,255,255,.7)">W</text>
       {props.deg === null ? null : (
         <g transform={`rotate(${rot} 50 50)`}>
           <path d="M50 16 L55 30 L50 27 L45 30 Z" fill="#fff" />
@@ -406,6 +406,9 @@ export function HomePage(p: PageProps) {
   // 没有日出日落时间时不画太阳（位置是估的）
   const daylight = sky.phase !== 'night' && today?.sunrise && today?.sunset ? sky.arc : null;
   const heroIcon = displayIcon(c.icon, sky);
+  // 降雨时间轴没有内容时：没去请求（逐小时预报显示近 3 小时不太会下雨）→"未来 2 小时无雨"；
+  // 请求失败、逐小时预报也没有、或取到的数据已全部过时 →"暂无数据"
+  const nowcastFallback = bundle.nowcast === null && !bundle.missing.includes('nowcast') && !isPlaceholder(hourly?.data[0] ?? { icon: '' }) ? 'dry' : 'unavailable';
   // 数据的实际年龄（接口故障时用的是旧数据）；页面缓存期间由浏览器脚本继续更新这行字
   const updMins = Math.max(0, Math.floor((p.nowMs - current.fetchedAt) / 60_000));
 
@@ -416,7 +419,7 @@ export function HomePage(p: PageProps) {
       sky={sky}
       devNote={devNote(p.providerName)}
       pageData={{ ...cityPageData(p), page: 'home' }}
-      preloadIcon={c.icon}
+      preloadIcon={{ icon: heroIcon, size: 62 }}
     >
       <TopBar location={loc} channel={channel} lang={lang} />
       <Jump p={p} />
@@ -447,15 +450,17 @@ export function HomePage(p: PageProps) {
           {updMins < 1 ? t(lang, 'UpdatedJustNow') : updMins < 60 ? t(lang, 'UpdatedMinutesAgo', { n: updMins }) : t(lang, 'UpdatedHoursAgo', { n: Math.floor(updMins / 60) })}
         </p>
       </section>
+      <EarlyUnits />
 
       <div data-live="nowcast" style="display:contents">
-        <Nowcast f={features} lang={lang} fallback={!isPlaceholder(hourly?.data[0] ?? { icon: '' }) && !bundle.missing.includes('nowcast') ? 'dry' : 'unavailable'} />
+        <Nowcast f={features} lang={lang} fallback={nowcastFallback} />
       </div>
 
       <a class="card" data-live="hourly" data-nav href={cityPath(channel, lang, loc.id, 'hourly')}>
         <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} more={t(lang, 'SeeHourlyDetails')} />
         <HourlyStrip hours={(hourly?.data ?? []).slice(0, HOURS_SHOWN)} days={days} lang={lang} nowMs={p.nowMs} />
       </a>
+      <EarlyTime />
 
       <AdSlot slot="home_1" height={100} lang={lang} />
 

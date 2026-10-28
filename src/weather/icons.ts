@@ -136,6 +136,15 @@ export function iconImage(key: string): string {
 }
 
 /**
+ * 图标的 srcset：128、256 像素两种 WebP（scripts/icons-webp.py 生成），浏览器按显示大小和屏幕密度选，
+ * 比原来 320 像素的 PNG 小一半以上。src 仍是 PNG，给不支持 srcset 的浏览器用。
+ */
+export function iconSrcset(key: string): string {
+  const base = `/img/weather/${iconImage(key).replace(/\.png$/, '')}`;
+  return `${base}-128.webp 128w, ${base}-256.webp 256w`;
+}
+
+/**
  * 图标 key → 动画背景类型。移植自旧站 backend/model/weather_visual.go 的 WeatherVisualBackground。
  */
 export function backgroundFor(key: string): string {

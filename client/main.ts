@@ -2,7 +2,7 @@
  * 浏览器端脚本（Vite 打包为 public/static/app.js）。
  * 页面主体由服务器生成并被 CDN 缓存；这里只处理因人而异、因时而异的部分。
  */
-import { iconImage } from '../src/weather/icons';
+import { iconImage, iconSrcset } from '../src/weather/icons';
 import { normalizeSearch, searchLongEnough } from '../src/weather/search';
 import {
   addCity,
@@ -21,6 +21,8 @@ import {
 import { entryKey, GUESS_KEY, isChoice, percentRight, readBook, VOTE_KEY, writeBook, type Choice, type Counts } from './lib/interact';
 import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS, STALE_AFTER_MIN } from './lib/time';
 import { drawCard, shareOrDownload } from './share';
+import { reportWebVitals } from './vitals';
+import { UNITS_KEY, UNITS_KEY_LEGACY } from '../src/config/units';
 import { defaultUnits, formatDistance, formatPrecip, formatSpeed, formatTemp, formatTempDelta, fromLegacy, parseUnits, type Units } from './lib/units';
 
 interface PageData {
@@ -110,10 +112,6 @@ function syncNav(root: ParentNode = document) {
 }
 
 // ---------- 2. 单位 ----------
-
-/** 旧版设置（metric / imperial），读一次后迁移到新键 */
-const UNITS_KEY_LEGACY = 'weather.units';
-const UNITS_KEY = 'weather.units.v2';
 
 function currentUnits(): Units {
   const saved = parseUnits(storage.get(UNITS_KEY));
@@ -375,7 +373,7 @@ interface Card {
 function cityRow(c: Card, onRemove?: () => void): HTMLElement {
   const row = el('div', { class: 'city' });
   const a = el('a', { href: cityHref(c.id) });
-  if (c.icon) a.append(el('img', { src: `/img/weather/${iconImage(c.icon)}`, alt: '', width: '40', height: '40' }));
+  if (c.icon) a.append(el('img', { src: `/img/weather/${iconImage(c.icon)}`, srcset: iconSrcset(c.icon), sizes: '40px', alt: '', width: '40', height: '40' }));
   const n = el('div', { class: 'n' });
   n.append(el('div', {}, c.name), el('div', { class: 'sub' }, [c.admin, c.country].filter(Boolean).join(', ')));
   a.append(n);
@@ -679,6 +677,7 @@ function init() {
   setupOffline();
   setupRetry();
   registerServiceWorker();
+  reportWebVitals(data.page ?? 'home');
 
   void refreshLive();
   setInterval(applyTime, 60_000);
