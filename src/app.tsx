@@ -315,7 +315,8 @@ async function cityPage(c: C, sub?: SubPage) {
   if (!target || !LOCATION_ID.test(id)) return c.notFound();
 
   const url = new URL(c.req.url);
-  const keyUrl = pageCacheKey(url);
+  // 页面缓存按部署版本区分：部署后马上换成新页面，不会把旧版本的 HTML 配新版本的脚本
+  const keyUrl = `${pageCacheKey(url)}?v=${c.env?.CF_VERSION_METADATA?.id ?? 'dev'}`;
   const key = new Request(keyUrl);
   const cache = defaultCache();
   const render = () => renderCity(c, CHANNEL_PLACEHOLDER, target.lang, id, sub);

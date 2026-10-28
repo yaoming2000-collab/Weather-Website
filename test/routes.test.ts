@@ -424,5 +424,26 @@ describe('page cache', () => {
       g.caches = before;
     }
   });
+
+  it('does not serve pages cached by a previous deployment', async () => {
+    const g = globalThis as { caches?: unknown };
+    const before = g.caches;
+    g.caches = { default: fakeCache() };
+    try {
+      const a = app();
+      const ctx = { waitUntil: async (p: Promise<unknown>) => p, passThroughOnException() {} } as unknown as ExecutionContext;
+      const get = async (version: string) => {
+        const pending: Promise<unknown>[] = [];
+        const r = await a.fetch(req('/wmi/en/w/102643743'), { CF_VERSION_METADATA: { id: version } }, { ...ctx, waitUntil: (p: Promise<unknown>) => pending.push(p) } as unknown as ExecutionContext);
+        await Promise.all(pending);
+        return r.headers.get('X-Page-Cache');
+      };
+      expect(await get('v1')).toBe('MISS');
+      expect(await get('v1')).toBe('HIT');
+      expect(await get('v2')).toBe('MISS');
+    } finally {
+      g.caches = before;
+    }
+  });
 });
 

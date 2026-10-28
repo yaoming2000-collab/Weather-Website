@@ -171,6 +171,7 @@ body{--cl:255,255,255}
 .place h1 span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .place h1 svg{flex:none;width:18px;height:18px;opacity:.9}
 .region{margin-top:1px;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.region.wrap{white-space:normal;overflow:visible}
 .btn{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:40px;height:40px;padding:0 11px;border-radius:999px;border:0;
   background:var(--chip);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
 .btn:active{background:rgba(255,255,255,.28)}
@@ -219,7 +220,8 @@ body{--cl:255,255,255}
 .card{display:block;margin:12px 0;padding:14px 16px 16px;border-radius:var(--r-lg);background:var(--glass);
   box-shadow:inset 0 1px 0 var(--glass-hi)}
 .sec{display:flex;align-items:center;gap:7px;margin:0 0 10px;font-size:13px;font-weight:600;color:var(--mut)}
-.sec svg{width:15px;height:15px;opacity:.85}
+.sec svg{width:15px;height:15px;opacity:.85;flex:none}
+.sec>span{min-width:0;overflow-wrap:anywhere;hyphens:auto}
 .sec .go{margin-inline-start:auto;display:inline-flex;align-items:center;gap:2px;font-weight:500;color:var(--fg);opacity:.92}
 .sec .go svg{width:14px;height:14px}
 a.card:active,.tile:active{transform:scale(.99)}
@@ -243,7 +245,9 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .hour img,.hour .sunico{display:block;width:34px;height:34px;margin:5px auto 3px}
 .hour .p{height:15px;font-size:11px;font-weight:600;color:var(--rain)}
 .hour .v{font-size:17px;font-weight:550}
-.hour.sunev .v{font-size:13px;font-weight:500;color:var(--mut)}
+/* 日出日落的文字在德语等语言里很长（Sonnenaufgang），允许加宽一点并换行，不压到旁边的格子 */
+.hour.sunev{width:auto;min-width:54px;max-width:92px;padding-inline:4px}
+.hour.sunev .v{font-size:11px;line-height:1.2;font-weight:500;color:var(--mut);overflow-wrap:break-word;hyphens:auto}
 .sunico{color:#ffd36b}
 
 /* 多日 */
@@ -284,8 +288,9 @@ a.card,.tile{transition:transform .15s var(--ease)}
 [dir=rtl] .meter b{transform:translateX(50%)}
 
 /* 详情方块 */
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
-.tile{display:flex;flex-direction:column;min-height:150px;padding:13px 15px 14px;border-radius:var(--r-lg);background:var(--glass);
+/* minmax(0,1fr)：长单词（如德语 Luftfeuchtigkeit）不会把两列撑出屏幕 */
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.tile{display:flex;flex-direction:column;min-width:0;min-height:150px;padding:13px 15px 14px;border-radius:var(--r-lg);background:var(--glass);
   box-shadow:inset 0 1px 0 var(--glass-hi)}
 .tile .sec{margin-bottom:8px}
 .tile .big{font-size:32px;font-weight:400;line-height:1.1;letter-spacing:-.01em}
@@ -411,7 +416,8 @@ a.wk:active{background:rgba(255,255,255,.06)}
 .row{display:grid;grid-template-columns:3.4em 34px 1fr auto;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
 .row:first-of-type{border-top:0}
 .row img{width:32px;height:32px}
-.row .main{min-width:0}.row .main div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 天气描述和风速等在长语言（德语、俄语）里换行，不截断 */
+.row .main{min-width:0}.row .main div{overflow-wrap:anywhere}
 .row .sub{font-size:12px;color:var(--mut)}
 .row .v{text-align:end;font-size:17px;font-weight:600}
 details.dd{border-top:1px solid var(--line)}details.dd:first-of-type{border-top:0}
