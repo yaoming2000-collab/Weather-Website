@@ -6,24 +6,24 @@ import type { AnomalyRecord, Ranking } from '../features/store';
 import { intlLocale, textDirection, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { cityPath, rankingPath } from '../routing/urls';
-import { AdSlot, DASH, Footer, Layout, Sec, SettingsLink, SubBar, Temp } from './components';
+import { conditionKey } from '../weather/derive';
+import { AdSlot, DASH, Footer, Icon, Layout, Sec, SettingsLink, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { cityPageData, Delta, devNote, pageSky, rich, type PageProps } from './home';
 
 const CHOICES: GuessChoice[] = ['colder', 'same', 'warmer'];
 
-/** 温度计式图：灰色是往年同日的平均最低到最高，两个圆点是今天的预报最低、最高 */
-function Thermometer(props: { lang: Lang; avgMin: number | null; avgMax: number; min: number | null; max: number; color: string }) {
-  const vals = [props.avgMin, props.avgMax, props.min, props.max].filter((v): v is number => v !== null);
+/** 温度计式图：灰色是去年同一天的最低到最高，两个圆点是今天的预报最低、最高 */
+function Thermometer(props: { lang: Lang; lastMin: number | null; lastMax: number; min: number | null; max: number; color: string }) {
+  const vals = [props.lastMin, props.lastMax, props.min, props.max].filter((v): v is number => v !== null);
   const lo = Math.floor(Math.min(...vals) - 2);
   const hi = Math.ceil(Math.max(...vals) + 2);
   const at = (v: number) => (((v - lo) / (hi - lo)) * 100).toFixed(1);
+  const lastLo = props.lastMin ?? props.lastMax;
   return (
     <div class="thermo">
       <div class="track">
-        {props.avgMin !== null ? (
-          <span class="usual" style={`inset-inline-start:${at(props.avgMin)}%;width:${(Number(at(props.avgMax)) - Number(at(props.avgMin))).toFixed(1)}%`} />
-        ) : null}
+        <span class="usual" style={`inset-inline-start:${at(lastLo)}%;width:${Math.max(1.5, Number(at(props.lastMax)) - Number(at(lastLo))).toFixed(1)}%`} />
         {props.min !== null ? <b class="pt lo" style={`inset-inline-start:${at(props.min)}%`} /> : null}
         <b class="pt hi" style={`inset-inline-start:${at(props.max)}%;--lv:${props.color}`} />
       </div>
@@ -40,12 +40,15 @@ function Thermometer(props: { lang: Lang; avgMin: number | null; avgMax: number;
       <div class="legend">
         <span>
           <i class="sw usual" />
-          {t(props.lang, 'ClimateUsualRange')}{' '}
-          {props.avgMin !== null ? (
-            <bdi>
-              <Temp c={props.avgMin} /> – <Temp c={props.avgMax} />
-            </bdi>
-          ) : null}
+          {t(props.lang, 'ClimateLastYearRange')}{' '}
+          <bdi>
+            {props.lastMin !== null ? (
+              <>
+                <Temp c={props.lastMin} /> –{' '}
+              </>
+            ) : null}
+            <Temp c={props.lastMax} />
+          </bdi>
         </span>
         <span>
           <i class="sw" style={`background:${props.color}`} />
@@ -60,17 +63,21 @@ function Thermometer(props: { lang: Lang; avgMin: number | null; avgMax: number;
   );
 }
 
-/** 未来 15 天：预报最高温折线；灰色带是"和往年差不多"的范围（往年平均最高 ±2°） */
+/**
+ * 未来 15 天：今年预报最高温（实线）和去年同一天的实际最高温（虚线），灰色带是"和去年差不多"的范围（去年 ±2°）。
+ * 今天这个点（和通往它的一段线）在猜之前不显示（data-spoil），免得看图就知道答案。
+ */
 function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
-  const pts = props.series.filter((s) => s.maxTemp !== null && s.avgMaxTemp !== null);
+  const pts = props.series.filter((s) => s.maxTemp !== null && s.lastMaxTemp !== null);
   // 数据不够时占同样高度，显示 --
   if (pts.length < 3) return <div class="ph-chart">{DASH}</div>;
+  const todayIncluded = pts[0]!.date === props.series[0]?.date;
   const rtl = textDirection(props.lang) === 'rtl';
   const W = 340;
   const H = 150;
   const top = 18;
   const bottom = 124;
-  const vals = pts.flatMap((s) => [s.maxTemp!, s.avgMaxTemp! - 2, s.avgMaxTemp! + 2]);
+  const vals = pts.flatMap((s) => [s.maxTemp!, s.lastMaxTemp! - 2, s.lastMaxTemp! + 2]);
   const lo = Math.floor(Math.min(...vals) - 1);
   const hi = Math.ceil(Math.max(...vals) + 1);
   const x = (i: number) => {
@@ -79,16 +86,20 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
   };
   const y = (v: number) => bottom - ((v - lo) / (hi - lo)) * (bottom - top);
   const band =
-    pts.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(s.avgMaxTemp! + 2).toFixed(1)}`).join(' ') +
+    pts.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(s.lastMaxTemp! + 2).toFixed(1)}`).join(' ') +
     ' ' +
     pts
-      .map((s, i) => [x(i), y(s.avgMaxTemp! - 2)] as const)
+      .map((s, i) => [x(i), y(s.lastMaxTemp! - 2)] as const)
       .reverse()
       .map(([a, b]) => `L${a.toFixed(1)} ${b.toFixed(1)}`)
       .join(' ') +
     ' Z';
-  const line = pts.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(s.maxTemp!).toFixed(1)}`).join(' ');
-  const usual = pts.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(s.avgMaxTemp!).toFixed(1)}`).join(' ');
+  const path = (from: number, to: number) =>
+    pts
+      .slice(from, to)
+      .map((s, i) => `${i === 0 ? 'M' : 'L'}${x(from + i).toFixed(1)} ${y(s.maxTemp!).toFixed(1)}`)
+      .join(' ');
+  const last = pts.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(s.lastMaxTemp!).toFixed(1)}`).join(' ');
   const narrow = new Intl.DateTimeFormat(intlLocale(props.lang), { weekday: 'narrow', timeZone: 'UTC' });
   const wd = (date: string) => {
     const [yy, m, d] = date.split('-').map(Number) as [number, number, number];
@@ -102,13 +113,17 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
     if (s.maxTemp! < pts[iMin]!.maxTemp!) iMin = i;
   });
   extremes.add(0).add(iMax).add(iMin);
+  const spoil = (i: number) => (todayIncluded && i === 0 ? { 'data-spoil': '' } : {});
   return (
     <svg class="series" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t(props.lang, 'ClimateChartTitle')}>
       <path d={band} fill="rgba(255,255,255,.16)" />
-      <path d={usual} fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1.2" stroke-dasharray="3 3" />
-      <path d={line} fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" />
+      <path d={last} fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.4" stroke-dasharray="3 3" />
+      {/* 今天到明天这一段单独画，猜之前不显示 */}
+      {todayIncluded ? <path d={path(0, 2)} data-spoil fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" /> : null}
+      <path d={path(todayIncluded ? 1 : 0, pts.length)} fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" />
       {pts.map((s, i) => (
         <circle
+          {...spoil(i)}
           cx={x(i).toFixed(1)}
           cy={y(s.maxTemp!).toFixed(1)}
           r={s.level && s.level !== 'normal' ? '4.2' : '3'}
@@ -118,7 +133,7 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
         />
       ))}
       {[...extremes].map((i) => (
-        <text x={x(i).toFixed(1)} y={(y(pts[i]!.maxTemp!) - 8).toFixed(1)} text-anchor="middle" font-size="13" font-weight="600" fill="#fff">
+        <text {...spoil(i)} x={x(i).toFixed(1)} y={(y(pts[i]!.maxTemp!) - 8).toFixed(1)} text-anchor="middle" font-size="13" font-weight="600" fill="#fff">
           <tspan data-c={String(pts[i]!.maxTemp)}>{Math.round(pts[i]!.maxTemp!)}</tspan>°
         </text>
       ))}
@@ -131,7 +146,7 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
   );
 }
 
-/** 今天和往年比 /w/{id}/climate（重点功能） */
+/** 今天和去年同一天比 /w/{id}/climate（重点功能） */
 export function ClimatePage(p: PageProps) {
   const { bundle, channel, lang, features } = p;
   const loc = bundle.location;
@@ -140,15 +155,16 @@ export function ClimatePage(p: PageProps) {
   const color = cmp ? CLIMATE_LEVEL_COLORS[cmp.level] : '#fff';
   const rain = features.rain;
   const verdictTpl = cmp ? t(lang, `ClimateVerdict_${cmp.wording}`) : '';
-  // 往年数据或预报这次没取到（临时失败）→ 提示稍后再试；城市本来就没有往年数据 → 原来的说明
-  const transient = bundle.missing.some((m) => m === 'climate' || m === 'climateMonthly' || m === 'daily');
+  // 去年数据或今年预报这次没取到（临时失败）→ 提示稍后再试；一直没有去年数据 → 说明
+  const transient = bundle.missing.some((m) => m === 'lastYear' || m === 'daily');
 
   return (
     <Layout lang={lang} title={`${title} · ${loc.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={{ ...cityPageData(p), page: 'climate' }}>
       <SubBar location={loc} channel={channel} lang={lang} title={title} />
 
       {!cmp ? (
-        <section class="card">
+        // 今天没出题：连续猜对天数不算断（client/main.ts markSkippedDay）
+        <section class="card" data-no-question data-city={loc.id} data-date={bundle.today}>
           <p class="lead">{t(lang, transient ? 'TryLater' : 'ClimateUnavailable')}</p>
         </section>
       ) : (
@@ -175,8 +191,16 @@ export function ClimatePage(p: PageProps) {
           <section class="card reveal" data-reveal style={`--lv:${color}`}>
             <p class="res" data-guess-result />
             <p class="verdict">{rich(lang, `ClimateVerdict_${cmp.wording}`, { delta: <Delta c={cmp.deltaMax} /> })}</p>
+            {/* 连续猜对天数（浏览器里算，见 client/lib/streak.ts） */}
+            <p class="streak" data-streak hidden />
             <p class="pc" data-guess-percent />
-            <Thermometer lang={lang} avgMin={cmp.avgMinTemp} avgMax={cmp.avgMaxTemp} min={cmp.minTemp} max={cmp.maxTemp} color={color} />
+            <p class="ly-day">
+              {cmp.lastIcon ? <Icon icon={cmp.lastIcon} size={28} alt="" /> : null}
+              <span>
+                {t(lang, 'ClimateLastYearToday')} <b>{cmp.lastIcon ? t(lang, conditionKey(cmp.lastIcon)) : DASH}</b>
+              </span>
+            </p>
+            <Thermometer lang={lang} lastMin={cmp.lastMinTemp} lastMax={cmp.lastMaxTemp} min={cmp.minTemp} max={cmp.maxTemp} color={color} />
             <div class="share-row">
               <button
                 type="button"
@@ -198,20 +222,24 @@ export function ClimatePage(p: PageProps) {
             </div>
           </section>
           <noscript>
-            <style>{'[data-reveal]{display:block!important}.guess .choices{display:none}'}</style>
+            <style>{'[data-reveal]{display:block!important}.guess .choices{display:none}.spoiler-pending [data-spoil]{visibility:visible!important}'}</style>
           </noscript>
         </>
       )}
 
       <AdSlot slot="climate_1" lang={lang} />
 
-      <section class="card">
+      <section class="card spoiler-pending" data-spoiler>
         <Sec icon={G.calendar()} title={t(lang, 'ClimateChartTitle')} />
         <SeriesChart series={features.series} lang={lang} />
         <div class="legend">
           <span>
             <i class="sw line" />
             {t(lang, 'ClimateForecastHigh')}
+          </span>
+          <span>
+            <i class="sw dash" />
+            {t(lang, 'ClimateLastYearHigh')}
           </span>
           <span>
             <i class="sw usual" />
@@ -224,9 +252,9 @@ export function ClimatePage(p: PageProps) {
         <Sec icon={G.umbrella()} title={t(lang, 'ClimateRainTitle')} />
         <div class="cmp-bars">
           <div>
-            <span>{t(lang, 'ClimateRainUsual')}</span>
-            {rain ? <i style={`width:${((rain.usualRainyDays / rain.days) * 100).toFixed(1)}%`} class="usual" /> : <i class="usual ph" />}
-            <b>{rain ? rain.usualRainyDays : DASH}</b>
+            <span>{t(lang, 'ClimateRainLastYear')}</span>
+            {rain ? <i style={`width:${((rain.lastYearRainyDays / rain.days) * 100).toFixed(1)}%`} class="usual" /> : <i class="usual ph" />}
+            <b>{rain ? rain.lastYearRainyDays : DASH}</b>
           </div>
           <div>
             <span>{t(lang, 'ClimateRainForecast')}</span>
@@ -234,7 +262,7 @@ export function ClimatePage(p: PageProps) {
             <b>{rain ? rain.forecastRainyDays : DASH}</b>
           </div>
         </div>
-        <p class="note">{rain ? t(lang, 'ClimateRainCompare', { usual: rain.usualRainyDays, days: rain.days, forecast: rain.forecastRainyDays }) : DASH}</p>
+        <p class="note">{rain ? t(lang, 'ClimateRainCompare', { last: rain.lastYearRainyDays, days: rain.days, forecast: rain.forecastRainyDays }) : DASH}</p>
       </section>
 
       <AdSlot slot="climate_2" lang={lang} />

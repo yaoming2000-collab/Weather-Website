@@ -92,3 +92,41 @@ describe('browser time', () => {
     expect(minutesAgo(Date.UTC(2026, 9, 22, 3, 0), Date.UTC(2026, 9, 22, 3, 7, 59))).toBe(7);
   });
 });
+
+describe('guess streak', () => {
+  it('counts correct days in a row and breaks on a wrong answer', async () => {
+    const { recordResult, currentStreak } = await import('../client/lib/streak');
+    let s = recordResult(undefined, '2026-10-20', true);
+    s = recordResult(s, '2026-10-21', true);
+    s = recordResult(s, '2026-10-22', true);
+    expect(s).toEqual({ cur: 3, best: 3, last: '2026-10-22' });
+    // 同一天再记不变
+    expect(recordResult(s, '2026-10-22', false)).toBe(s);
+    s = recordResult(s, '2026-10-23', false);
+    expect(s.cur).toBe(0);
+    expect(s.best).toBe(3);
+    s = recordResult(s, '2026-10-24', true);
+    expect(currentStreak(s, '2026-10-24')).toBe(1);
+  });
+
+  it('breaks when a day is missed, but not when there was no question', async () => {
+    const { recordResult, recordSkip, currentStreak } = await import('../client/lib/streak');
+    let s = recordResult(recordResult(undefined, '2026-10-20', true), '2026-10-21', true);
+    // 22 日没出题（去年数据缺失）
+    s = recordSkip(s, '2026-10-22')!;
+    s = recordResult(s, '2026-10-23', true);
+    expect(s.cur).toBe(3);
+    // 昨天之前就没再猜：今天看到的是 0
+    expect(currentStreak(s, '2026-10-24')).toBe(3);
+    expect(currentStreak(s, '2026-10-25')).toBe(0);
+    // 隔了一天再猜对：重新从 1 开始，最长保留
+    s = recordResult(s, '2026-10-25', true);
+    expect(s).toEqual({ cur: 1, best: 3, last: '2026-10-25' });
+  });
+
+  it('ignores damaged storage', async () => {
+    const { readStreaks } = await import('../client/lib/streak');
+    expect(readStreaks('not json')).toEqual({});
+    expect(readStreaks('{"1":{"cur":"x"}}')).toEqual({});
+  });
+});

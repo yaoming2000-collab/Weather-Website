@@ -336,6 +336,15 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .legend>span{display:inline-flex;align-items:center;gap:6px}
 .sw{display:inline-block;width:14px;height:8px;border-radius:4px;background:#fff}
 .sw.usual{background:rgba(255,255,255,.3)}.sw.lo{background:#9bd4ff}.sw.line{height:2px;border-radius:1px}
+.sw.dash{height:0;border-radius:0;background:none;border-top:2px dashed rgba(255,255,255,.6)}
+/* 往年对比页：猜之前不显示 15 天对比图里"今天"的点 */
+.spoiler-pending [data-spoil]{visibility:hidden}
+.ly-day{display:flex;align-items:center;gap:8px;margin:10px 0 0;font-size:14px;color:var(--mut)}
+.ly-day b{color:var(--fg);font-weight:600}
+.streak{margin:6px 0 0;font-size:14px;font-weight:600;color:#ffd36b}
+.streak .bump{display:inline-block;animation:bump .6s var(--ease)}
+@keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.streak .bump{animation:none}}
 .pill-btn{display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 15px;border:0;border-radius:999px;background:rgba(255,255,255,.16);font-size:14px;font-weight:600;cursor:pointer}
 .pill-btn svg{width:17px;height:17px}
 .pill-btn:active{background:rgba(255,255,255,.28)}

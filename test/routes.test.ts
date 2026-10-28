@@ -6,12 +6,13 @@ import { MemoryFeatureStore } from '../src/features/store';
 import { MockProvider } from '../src/weather/mock';
 import { ProviderError, type WeatherProvider } from '../src/weather/provider';
 import { WeatherService } from '../src/weather/service';
+import { MockHistory, type PastWeatherSource } from '../src/weather/history';
 
 const NOW = Date.UTC(2026, 9, 22, 3, 0);
 
-function app(provider: WeatherProvider = new MockProvider(() => NOW)) {
+function app(provider: WeatherProvider = new MockProvider(() => NOW), history: PastWeatherSource | null = new MockHistory()) {
   return createApp({
-    weather: () => new WeatherService(provider, new MemoryStore(() => NOW), () => NOW, () => undefined),
+    weather: () => new WeatherService(provider, new MemoryStore(() => NOW), () => NOW, () => undefined, undefined, undefined, undefined, history ?? undefined),
     features: () => new MemoryFeatureStore(),
   });
 }
@@ -173,7 +174,7 @@ describe('city page', () => {
     const names = { lookup: async (ids: string[]) => new Map(ids.filter((i) => i === '102643743').map((i) => [i, { labels: { ja: 'ロンドン' }, iso: 'GB' }])) };
     const features = new MemoryFeatureStore();
     const a = createApp({
-      weather: () => new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, names),
+      weather: () => new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, names, new MockHistory()),
       features: () => features,
     });
     const html = await (await a.request(req('/wmi/ja/w/102643743'))).text();
@@ -326,24 +327,29 @@ describe('step 3 pages', () => {
     expect(html).toContain('href="/wmi/en/ranking"');
   });
 
-  it('says so when a city has no long-term averages', async () => {
-    const noClimate: WeatherProvider = new Proxy(new MockProvider(() => NOW), {
-      get(target, prop, receiver) {
-        const v = Reflect.get(target, prop, receiver);
-        if (prop === 'climateDay' || prop === 'climateMonthly') return () => Promise.reject(new ProviderError('plan', 403));
-        return typeof v === 'function' ? v.bind(target) : v;
-      },
-    });
-    const a = app(noClimate);
+  it('says so when there is no data for the same day last year', async () => {
+    // 没有配置 OpenWeather（没有密钥）：长期没有，不算"缺数据"，页面照常缓存 5 分钟
+    const a = app(new MockProvider(() => NOW), null);
     const homeRes = await a.request(req('/wmi/en/w/102643743'));
-    // 套餐不包含 / 城市没有往年数据是长期的，不算"缺数据"，页面照常缓存 5 分钟
     expect(homeRes.headers.get('X-Page-TTL')).toBe('300');
     const home = await homeRes.text();
     // 标签位置保留，显示"--"，不让首屏高度变化
     expect(home).toContain('style="--lv:var(--faint)"');
+    expect(home).not.toContain('data-guess-tag="');
     const res = await a.request(req('/wmi/en/w/102643743/climate'));
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("We don&#39;t have long-term averages");
+    expect(await res.text()).toContain('class="lead"');
+  });
+
+  it('does not give the answer away on the home page before the visitor guesses', async () => {
+    const home = await (await app().request(req('/wmi/en/w/102643743'))).text();
+    const at = home.indexOf('data-guess-tag="');
+    expect(at).toBeGreaterThan(0);
+    const tag = home.slice(at, home.indexOf('</a>', at));
+    // 结果只在 <template> 里，看得见的文字是"猜一猜"
+    const visible = tag.replace(/<template>[\s\S]*?<\/template>/, '');
+    expect(visible).not.toMatch(/than (on )?this day last year|than last year/i);
+    expect(tag).toContain('<template>');
   });
 
   it('caches a page for only a minute when data was missing for a temporary reason', async () => {
@@ -466,7 +472,7 @@ describe('page cache', () => {
     const pending: Promise<unknown>[] = [];
     try {
       let renders = 0;
-      const service = new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined);
+      const service = new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, undefined, undefined, undefined, new MockHistory());
       const original = service.cityBundle.bind(service);
       service.cityBundle = (id: string) => (renders++, original(id));
       const a = createApp({ weather: () => service, features: () => new MemoryFeatureStore() });

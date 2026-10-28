@@ -11,16 +11,15 @@ import type { CacheEntry, CacheStore } from '../cache/store';
 import { currentHourIndex, localDate, monthDayOf, nextLocalMidnight } from '../time/cityTime';
 import { forecaLocationLang } from './foreca/langs';
 import { intlLocale, isLang } from '../i18n/languages';
-import { WIKIDATA_LANGS, type PlaceNamesSource, type WikiPlace } from './wikidata';
+import { WIKIDATA_LANGS, type AreaSearchSource, type PlaceNamesSource, type WikiPlace } from './wikidata';
 import { isoOfCountry } from '../geo/countries';
 import { normalizeSearch, searchLongEnough } from './search';
+import { historyBlockStart, lastYearDate, type PastDay, type PastWeatherSource } from './history';
 
 export { normalizeSearch, searchLongEnough };
 import { ProviderError, type WeatherProvider } from './provider';
 import type {
   AirQualityPoint,
-  ClimateDay,
-  ClimateMonth,
   CurrentWeather,
   DailyPoint,
   Fetched,
@@ -58,6 +57,10 @@ export class WeatherService {
     private stagger: number = Math.random(),
     private readonly usage?: UsageRecorder,
     private readonly placeNames?: PlaceNamesSource,
+    /** 去年同一天的实际天气（OpenWeather）；没有配置时页面上"和去年比"显示 "--" */
+    private readonly history?: PastWeatherSource,
+    /** Foreca 搜不到时按名字找县、区（Wikidata） */
+    private readonly areaSearch?: AreaSearchSource,
   ) {}
 
   /** Wikidata 出错后暂停查询到这个时刻（同一实例内），期间城市名用英文 */
@@ -163,7 +166,8 @@ export class WeatherService {
     if (!pending) {
       // 只统计向天气供应商的请求（键以 v1:<供应商>: 开头），排行榜等数据库查询不算
       const [, prov, kind, cityId] = key.split(':');
-      const track = prov === this.provider.name && kind ? kind : null;
+      // 去年数据来自 OpenWeather（键以 v1:owm: 开头），也记下来，方便核对 OpenWeather 的用量
+      const track = (prov === this.provider.name || prov === this.history?.name) && kind ? (prov === this.provider.name ? kind : `${prov}-${kind}`) : null;
       pending = (async () => {
         let value: T;
         try {
@@ -342,12 +346,36 @@ export class WeatherService {
    * 城市搜索。结果按"Foreca 实际使用的语言 + 关键字"缓存一天
    * （网站 27 种语言里有 12 种 Foreca 不支持、都按英文查，共用一份缓存）。
    */
-  async search(query: string, lang: string): Promise<WeatherLocation[]> {
+  async search(query: string, lang: string): Promise<SearchHit[]> {
     const q = normalizeSearch(query);
     if (!searchLongEnough(q)) return [];
     const fl = forecaLocationLang(lang);
     const res = await this.cached(this.key('search', fl, q), SEARCH_TTL, () => this.provider.searchLocations(q, fl));
-    return res.data.slice(0, 10);
+    if (res.data.length > 0 || !this.areaSearch) return res.data.slice(0, 10);
+    // Foreca 只收城市、镇，不收县和区（如"惠东"）：按名字找行政区，再换成附近的 Foreca 城市（县城等）
+    try {
+      return await withBudget(this.areaFallback(q, lang), AREA_SEARCH_BUDGET_MS);
+    } catch (err) {
+      this.log(`[weather] area search failed for ${q}: ${(err as Error).message}`);
+      return [];
+    }
+  }
+
+  private async areaFallback(q: string, lang: string): Promise<SearchHit[]> {
+    const source = this.areaSearch!;
+    const res = await this.cached(['v1', 'wd', 'area', lang, q].join(':'), SEARCH_TTL, async () => {
+      const areas = (await source.searchAreas(q, lang)).slice(0, 3);
+      const out: SearchHit[] = [];
+      for (const a of areas) {
+        const loc = await this.nearestLocation(a.lat, a.lon).catch(() => null);
+        if (!loc || distanceKm(a, loc) > AREA_MAX_DISTANCE_KM || out.some((o) => o.id === loc.id)) continue;
+        out.push({ ...loc, area: a.label });
+      }
+      // 城市名换成页面语言（如 Pingshan → 平山）
+      const named = await this.localize(out, lang, { keepAdmin: true });
+      return named.map((l, i) => ({ ...l, area: out[i]!.area }));
+    });
+    return res.data;
   }
 
   /** "我的城市"列表的卡片：城市、当前天气、今日最高最低。单个城市失败时跳过。 */
@@ -402,14 +430,40 @@ export class WeatherService {
     return this.cached(this.key('aq', id), DATA_TTL.airQuality, () => this.provider.airQuality(id, FORECAST_PERIODS.airQuality));
   }
 
-  climateDay(id: string, monthDay: string): Promise<Fetched<ClimateDay>> {
-    return this.cached(this.key('clid', id, monthDay), DATA_TTL.climateDaily, () =>
-      this.provider.climateDay(id, monthDay),
+  /**
+   * 去年同一天的实际天气，按今年的日期返回（今年 2 月 29 日对去年 2 月 28 日）。
+   * 按 10 天一块向 OpenWeather 取（一次请求 10 天），每块永久缓存：同一城市大约每 10 天才新请求一次。
+   * 某一块取不到时，那几天没有数据（页面显示 "--"），其余照常。
+   */
+  async lastYear(location: WeatherLocation, dates: string[]): Promise<Fetched<Record<string, PastDay>>> {
+    const source = this.history;
+    if (!source || dates.length === 0) return { data: {}, fetchedAt: this.now() };
+    const wanted = dates.map((d) => ({ date: d, past: lastYearDate(d) }));
+    const blocks = [...new Set(wanted.map((w) => historyBlockStart(w.past)))];
+    const results = await Promise.allSettled(
+      blocks.map((start) =>
+        this.cached(['v1', source.name, 'ly', location.id, start].join(':'), DATA_TTL.lastYear, () =>
+          source.days(location.lat, location.lon, start),
+        ),
+      ),
     );
-  }
-
-  climateMonthly(id: string): Promise<Fetched<ClimateMonth[]>> {
-    return this.cached(this.key('clim', id), DATA_TTL.climateMonthly, () => this.provider.climateMonthly(id));
+    const byPast = new Map<string, PastDay>();
+    let fetchedAt = this.now();
+    let failure: unknown = null;
+    results.forEach((r) => {
+      if (r.status === 'fulfilled') {
+        fetchedAt = Math.min(fetchedAt, r.value.fetchedAt);
+        for (const d of r.value.data) byPast.set(d.date, d);
+      } else failure = r.reason;
+    });
+    // 全部失败时报错（页面记为"缺数据"，只缓存 1 分钟）；部分失败时用拿到的
+    if (byPast.size === 0 && failure) throw failure;
+    const data: Record<string, PastDay> = {};
+    for (const w of wanted) {
+      const d = byPast.get(w.past);
+      if (d) data[w.date] = d;
+    }
+    return { data, fetchedAt };
   }
 
   nowcast(id: string, radar: boolean): Promise<Fetched<NowcastPoint[]>> {
@@ -439,13 +493,14 @@ export class WeatherService {
       return this.optional(what, id, withBudget(p, Math.max(300, deadline - Date.now())), missing);
     };
 
-    const [current, hourly, daily, air, climate, climateMonthly] = await Promise.all([
+    // 去年同一天：今天起 15 天（和 15 天对比图一致）
+    const window = Array.from({ length: FORECAST_PERIODS.daily }, (_, i) => addDays(today, i));
+    const [current, hourly, daily, air, lastYear] = await Promise.all([
       this.current(id),
       opt('hourly', this.hourly(id)),
       opt('daily', this.daily(id, location.timezone)),
       opt('air', this.airQuality(id)),
-      opt('climate', this.climateDay(id, monthDayOf(today))),
-      opt('climateMonthly', this.climateMonthly(id)),
+      opt('lastYear', this.lastYear(location, window)),
     ]);
 
     const hours = hourly ? { ...hourly, data: fromCurrentHour(hourly.data, now) } : null;
@@ -464,8 +519,7 @@ export class WeatherService {
       hourly: hours,
       daily: daily ? { ...daily, data: daily.data.filter((d) => d.date >= today) } : null,
       air: air ? { ...air, data: fromCurrentHour(air.data, now) } : null,
-      climate,
-      climateMonthly,
+      lastYear,
       nowcast,
       radar,
       missing,
@@ -489,6 +543,21 @@ export class WeatherService {
 }
 
 const SEARCH_TTL = 24 * 3600;
+/** 按县、区名字找城市时最多等多久（毫秒），以及行政区中心到 Foreca 城市最远多少公里 */
+const AREA_SEARCH_BUDGET_MS = 2500;
+const AREA_MAX_DISTANCE_KM = 30;
+
+/** 搜索结果；area 是用户搜的行政区名字（Foreca 里没有它，结果是附近的城市，页面显示"惠东县（平山）"） */
+export type SearchHit = WeatherLocation & { area?: string };
+
+/** 两点间的大圆距离（公里） */
+export function distanceKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r;
+  const dLon = (b.lon - a.lon) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
 /** 城市名本地化最多等多久（毫秒） */
 export const NAME_BUDGET_MS = 1500;
 
@@ -511,8 +580,8 @@ export interface CityBundle {
   hourly: Fetched<HourlyPoint[]> | null;
   daily: Fetched<DailyPoint[]> | null;
   air: Fetched<AirQualityPoint[]> | null;
-  climate: Fetched<ClimateDay> | null;
-  climateMonthly: Fetched<ClimateMonth[]> | null;
+  /** 去年同一天的实际天气，键是今年的日期；没取到时为 null */
+  lastYear: Fetched<Record<string, PastDay>> | null;
   nowcast: Fetched<NowcastPoint[]> | null;
   radar: boolean;
   /** 这次没取到的非必需数据（限流、超时等临时原因）。不为空时页面只缓存 1 分钟。 */
@@ -523,6 +592,11 @@ export interface CityBundle {
 export function shouldFetchNowcast(current: CurrentWeather, hourly: HourlyPoint[]): boolean {
   if ((current.precipRate ?? 0) > 0) return true;
   return hourly.slice(0, 3).some((h) => (h.precipProb ?? 0) >= 30);
+}
+
+/** YYYY-MM-DD 加 n 天 */
+export function addDays(date: string, n: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400_000).toISOString().slice(0, 10);
 }
 
 export function isNotFound(err: unknown): boolean {
@@ -545,7 +619,7 @@ function isAbsent(status: number | null): boolean {
 }
 
 /** 超过时限就先放弃（请求本身由 defer 交给 waitUntil 继续，完成后照样写进缓存，下一次就有了） */
-function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
+export function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new ProviderError(`took longer than ${ms} ms`)), ms);

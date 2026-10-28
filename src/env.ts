@@ -4,6 +4,8 @@ export interface Env {
   WEATHER_PROVIDER?: string;
   /** Foreca API 密钥（wrangler secret put FORECA_TOKEN） */
   FORECA_TOKEN?: string;
+  /** OpenWeather One Call API 密钥，取去年同一天的天气（wrangler secret put OWM_KEY）。没有时"和去年比"显示 "--" */
+  OWM_KEY?: string;
   /** 天气数据全局缓存 */
   WEATHER_KV?: KVNamespace;
   /** 猜一猜计数和排行榜（第 3 步）。没有绑定时退回内存存储 */

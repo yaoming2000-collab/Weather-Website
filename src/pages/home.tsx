@@ -268,12 +268,24 @@ function LifeRow(props: { p: PageProps }) {
   );
 }
 
-/** 顶部"比往年同期暖 6°"标签 */
+/**
+ * 猜过之后才把首页标签换成结果（首次绘制前做，见 GUESS_TAG_SCRIPT；页面更新后由 client/main.ts revealGuessTags 再做一次）。
+ * 猜一猜的记录在 localStorage weather.guess.v1，键是"城市|日期"。
+ */
+export const GUESS_TAG_SCRIPT = `(function(){try{var b=JSON.parse(localStorage.getItem('weather.guess.v1')||'{}');
+var t=document.querySelectorAll('[data-guess-tag]');for(var i=0;i<t.length;i++){var a=t[i];if(!b[a.getAttribute('data-guess-tag')])continue;
+var tpl=a.querySelector('template');var s=a.querySelector('[data-tag-text]');if(!tpl||!s)continue;s.innerHTML=tpl.innerHTML;a.style.setProperty('--lv',a.getAttribute('data-result-color'));a.removeAttribute('data-guess-tag')}}catch(e){}})()`;
+
+/**
+ * 顶部"比去年今天热 2°"标签。
+ * 没猜之前只显示"今天比去年热还是冷？猜一猜"（不提前说答案，Darren 2026-10-28）；猜过之后显示结果。
+ * 结果放在 <template> 里，由脚本换上去。
+ */
 export function ClimateTag(props: { p: PageProps }) {
   const { p } = props;
   const label = p.features.label;
   const href = cityPath(p.channel, p.lang, p.bundle.location.id, 'climate');
-  // 没有往年数据时保留同样大小的标签（"今天 vs 往年 --"），点进去看原因
+  // 没有去年数据时保留同样大小的标签（"和去年比 --"），点进去看原因
   if (!label) {
     return (
       <a class="vs" data-nav href={href} style="--lv:var(--faint)">
@@ -286,16 +298,23 @@ export function ClimateTag(props: { p: PageProps }) {
     );
   }
   const c = label.comparison;
-  const text =
-    label.mode === 'rain'
-      ? t(p.lang, 'ClimateLabel_rain', { n: label.rainDays })
-      : rich(p.lang, `ClimateLabel_${c.wording}`, { delta: <Delta c={c.deltaMax} /> });
   return (
-    <a class="vs" data-nav href={href} style={`--lv:${label.mode === 'rain' ? 'var(--rain)' : CLIMATE_LEVEL_COLORS[c.level]}`}>
-      <i />
-      <span>{text}</span>
-      {G.chevron('flip')}
-    </a>
+    <>
+      <a
+        class="vs"
+        data-nav
+        href={href}
+        style="--lv:var(--faint)"
+        data-guess-tag={`${p.bundle.location.id}|${c.date}`}
+        data-result-color={CLIMATE_LEVEL_COLORS[c.level]}
+      >
+        <i />
+        <span data-tag-text>{t(p.lang, 'ClimateTeaser')}</span>
+        <template>{rich(p.lang, `ClimateLabel_${c.wording}`, { delta: <Delta c={c.deltaMax} /> })}</template>
+        {G.chevron('flip')}
+      </a>
+      <script>{raw(GUESS_TAG_SCRIPT)}</script>
+    </>
   );
 }
 

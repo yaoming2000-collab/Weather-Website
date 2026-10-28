@@ -4,6 +4,7 @@ import { DATA_TTL, FAILURE_TTL, MAX_STALE_SECONDS, OPTIONAL_DATA_BUDGET_MS } fro
 import { MockProvider } from '../src/weather/mock';
 import { ProviderError } from '../src/weather/provider';
 import { fromCurrentHour, searchLongEnough, shouldFetchNowcast, WeatherService } from '../src/weather/service';
+import { MockHistory, type PastWeatherSource } from '../src/weather/history';
 import type { CacheStore } from '../src/cache/store';
 
 function setup(startMs = Date.UTC(2026, 9, 22, 3, 0)) {
@@ -31,8 +32,19 @@ function setup(startMs = Date.UTC(2026, 9, 22, 3, 0)) {
     },
   });
   const store = new MemoryStore(clock);
+  // 去年同一天的数据（OpenWeather）：统计调用次数，可模拟故障
+  const mockHistory = new MockHistory();
+  const history: PastWeatherSource = {
+    name: 'owm',
+    days: (lat, lon, start) => {
+      calls.history = (calls.history ?? 0) + 1;
+      const b = broken.get('history');
+      if (b) return Promise.reject(new ProviderError('broken', b));
+      return mockHistory.days(lat, lon, start);
+    },
+  };
   // stagger：本"机房"过期后再等多久才刷新（0 = 一过期就刷新）
-  const make = (st: CacheStore, stagger = 0) => new WeatherService(counted, st, clock, () => undefined, stagger);
+  const make = (st: CacheStore, stagger = 0) => new WeatherService(counted, st, clock, () => undefined, stagger, undefined, undefined, history);
   const service = make(store);
   return {
     service,
@@ -132,13 +144,24 @@ describe('WeatherService caching', () => {
     expect(calls.nearestLocation).toBe(1);
   });
 
-  it('asks for climate data using the city date, not the server date', async () => {
+  it('asks for last year using the city date, in cached 10-day blocks', async () => {
     // 03:00 UTC 时美国中部还是 21 日
-    const { service } = setup(Date.UTC(2026, 9, 22, 3, 0));
+    const { service, calls, advance } = setup(Date.UTC(2026, 9, 22, 3, 0));
     const bundle = await service.cityBundle('104686017');
     expect(bundle.today).toBe('2026-10-21');
-    expect(bundle.climate?.data.monthDay).toBe('10-21');
-    expect(bundle.climateMonthly?.data).toHaveLength(12);
+    expect(bundle.lastYear?.data['2026-10-21']?.date).toBe('2025-10-21');
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(15);
+    // 15 天跨 2–3 个 10 天块
+    const first = calls.history!;
+    expect(first).toBeGreaterThanOrEqual(2);
+    expect(first).toBeLessThanOrEqual(3);
+    // 过去的数据不会变：一天后再打开，最多多取一块
+    advance(86400);
+    await service.cityBundle('104686017');
+    expect(calls.history! - first).toBeLessThanOrEqual(1);
+    // Foreca 的往年平均不再请求
+    expect(calls.climateDay ?? 0).toBe(0);
+    expect(calls.climateMonthly ?? 0).toBe(0);
   });
 
   it('starts lists at the current hour and keeps enough hours for tomorrow', async () => {
@@ -155,12 +178,10 @@ describe('WeatherService caching', () => {
 
   it('does not count data a city never has as missing, but does count temporary failures', async () => {
     const { service, breakMethod } = setup();
-    breakMethod('climateDay', 404);
-    breakMethod('climateMonthly', 403);
+    breakMethod('history', 403);
     breakMethod('airQuality', 503);
     const bundle = await service.cityBundle('102643743');
-    expect(bundle.climate).toBeNull();
-    expect(bundle.climateMonthly).toBeNull();
+    expect(bundle.lastYear).toBeNull();
     expect(bundle.air).toBeNull();
     expect(bundle.missing).toEqual(['air']);
   });
@@ -354,3 +375,39 @@ describe('usage recording', () => {
   });
 });
 
+
+describe('search by county or district name', () => {
+  function svc(areas: Array<{ label: string; lat: number; lon: number }>, fail = false) {
+    let asked = 0;
+    const areaSearch = {
+      searchAreas: async () => {
+        asked++;
+        if (fail) throw new Error('wikidata down');
+        return areas;
+      },
+    };
+    const service = new WeatherService(new MockProvider(), new MemoryStore(), () => Date.UTC(2026, 9, 22, 3), () => undefined, 0, undefined, undefined, undefined, areaSearch);
+    return { service, asked: () => asked };
+  }
+
+  it('finds the nearby city when Foreca has no match', async () => {
+    const { service } = svc([{ label: 'Camden', lat: 51.54, lon: -0.14 }]);
+    const hits = await service.search('Camden', 'en');
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.name).toBe('London');
+    expect(hits[0]!.area).toBe('Camden');
+  });
+
+  it('drops places too far from the area', async () => {
+    const { service } = svc([{ label: 'Middle of the Atlantic', lat: 40, lon: -40 }]);
+    expect(await service.search('Atlantic', 'en')).toEqual([]);
+  });
+
+  it('does not ask Wikidata when Foreca finds the city, and survives Wikidata errors', async () => {
+    const ok = svc([]);
+    expect((await ok.service.search('London', 'en')).length).toBeGreaterThan(0);
+    expect(ok.asked()).toBe(0);
+    const broken = svc([], true);
+    expect(await broken.service.search('Nowhere', 'en')).toEqual([]);
+  });
+});

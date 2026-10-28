@@ -28,6 +28,18 @@ export interface WikiPlace {
   iso: string | null;
 }
 
+/** 按名字找到的行政区（县、区等）：Foreca 搜不到时用它的坐标找附近的 Foreca 城市 */
+export interface AreaMatch {
+  /** 页面语言的名字，如"惠东县" */
+  label: string;
+  lat: number;
+  lon: number;
+}
+
+export interface AreaSearchSource {
+  searchAreas(query: string, lang: string): Promise<AreaMatch[]>;
+}
+
 export interface PlaceNamesSource {
   /** 按 Foreca 城市 ID 批量查；查不到的城市不在结果里 */
   lookup(ids: string[]): Promise<Map<string, WikiPlace>>;
@@ -123,5 +135,53 @@ export class WikidataNames implements PlaceNamesSource {
     } finally {
       clearTimeout(timer);
     }
+  }
+}
+
+/** 网站语言 → Wikidata 语言代码 */
+const WIKI_SEARCH_LANG: Record<string, string> = { bp: 'pt', lm: 'es', no: 'nb' };
+
+/**
+ * 在 Wikidata 里按名字搜地方（Foreca 只收城市、镇，不收县和区，例如"惠东"搜不到，Darren 2026-10-28）。
+ * 只保留有坐标、有 GeoNames 编号的条目（行政区、居民点），火车站、人名等会被排除。
+ */
+export class WikidataAreaSearch implements AreaSearchSource {
+  constructor(private readonly fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = (i, init) => fetch(i, init)) {}
+
+  private async get<T>(params: Record<string, string>): Promise<T> {
+    const url = `https://www.wikidata.org/w/api.php?${new URLSearchParams({ ...params, format: 'json' }).toString()}`;
+    const res = await this.fetchImpl(url, {
+      headers: { Accept: 'application/json', 'User-Agent': 'itsfunmag-weather/1.0 (https://weather.itsfunmag.com)' },
+    });
+    if (!res.ok) throw new Error(`Wikidata responded ${res.status}`);
+    return (await res.json()) as T;
+  }
+
+  async searchAreas(query: string, lang: string): Promise<AreaMatch[]> {
+    const wl = WIKI_SEARCH_LANG[lang] ?? lang;
+    const found = await this.get<{ search?: Array<{ id: string; label?: string; display?: { label?: { value?: string } } }> }>({
+      action: 'wbsearchentities',
+      search: query,
+      language: wl,
+      uselang: wl,
+      type: 'item',
+      limit: '7',
+    });
+    const hits = found.search ?? [];
+    if (hits.length === 0) return [];
+    const ents = await this.get<{ entities?: Record<string, { claims?: Record<string, Array<{ mainsnak?: { datavalue?: { value?: unknown } } }>> }> }>({
+      action: 'wbgetentities',
+      ids: hits.map((h) => h.id).join('|'),
+      props: 'claims',
+    });
+    const out: AreaMatch[] = [];
+    for (const h of hits) {
+      const claims = ents.entities?.[h.id]?.claims ?? {};
+      const coord = claims.P625?.[0]?.mainsnak?.datavalue?.value as { latitude?: number; longitude?: number } | undefined;
+      if (!claims.P1566?.length || typeof coord?.latitude !== 'number' || typeof coord.longitude !== 'number') continue;
+      const label = h.display?.label?.value ?? h.label;
+      if (label) out.push({ label, lat: coord.latitude, lon: coord.longitude });
+    }
+    return out;
   }
 }

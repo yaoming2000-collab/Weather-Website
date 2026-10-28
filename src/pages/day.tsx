@@ -90,7 +90,7 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
                 <span>
                   {point.level === 'normal'
                     ? t(lang, 'ClimateLabel_normal')
-                    : rich(lang, `ClimateLabel_${wordingKey(point.level, climateTone(point.avgMaxTemp ?? 15))}`, { delta: <Delta c={point.delta} /> })}
+                    : rich(lang, `ClimateLabel_${wordingKey(point.level, climateTone(point.lastMaxTemp ?? 15))}`, { delta: <Delta c={point.delta} /> })}
                 </span>
                 {G.chevron('flip')}
               </a>

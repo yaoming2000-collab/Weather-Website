@@ -19,6 +19,7 @@ import {
   type SavedCity,
 } from './lib/saved';
 import { entryKey, GUESS_KEY, isChoice, percentRight, readBook, VOTE_KEY, writeBook, type Choice, type Counts } from './lib/interact';
+import { currentStreak, readStreaks, recordResult, recordSkip, STREAK_KEY } from './lib/streak';
 import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS, STALE_AFTER_MIN } from './lib/time';
 import { drawCard, shareOrDownload } from './share';
 import { reportWebVitals } from './vitals';
@@ -290,6 +291,7 @@ async function refreshLive(retry = true) {
     document.body.className = doc.body.className;
     const theme = doc.querySelector('meta[name="theme-color"]')?.getAttribute('content');
     if (theme) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme);
+    revealGuessTags();
     applyUnits(currentUnits());
     applyTime();
   } catch {
@@ -480,7 +482,38 @@ function readCounts(j: unknown): Counts | null {
   return c && typeof c.colder === 'number' ? c : null;
 }
 
+/**
+ * 首页"和去年比"标签：猜过之后才显示结果（首次绘制前页面里的内联脚本已经做过一次；页面更新后要再做）。
+ */
+function revealGuessTags(root: ParentNode = document) {
+  const book = readBook(storage.get(GUESS_KEY));
+  for (const a of $$('[data-guess-tag]', root)) {
+    if (!book[a.dataset.guessTag ?? '']) continue;
+    const tpl = a.querySelector('template');
+    const text = a.querySelector('[data-tag-text]');
+    if (!tpl || !text) continue;
+    text.replaceChildren(tpl.content.cloneNode(true));
+    a.style.setProperty('--lv', a.dataset.resultColor ?? '');
+    a.removeAttribute('data-guess-tag');
+  }
+}
+
+/** 往年对比页没出题（去年数据缺失）：连续猜对天数不算断 */
+function markSkippedDay() {
+  const box = document.querySelector<HTMLElement>('[data-no-question]');
+  const city = box?.dataset.city;
+  const date = box?.dataset.date;
+  if (!city || !date) return;
+  const book = readStreaks(storage.get(STREAK_KEY));
+  const next = recordSkip(book[city], date);
+  if (next && next !== book[city]) {
+    book[city] = next;
+    storage.set(STREAK_KEY, JSON.stringify(book));
+  }
+}
+
 function setupGuess() {
+  markSkippedDay();
   const box = document.querySelector<HTMLElement>('[data-guess]');
   const reveal = document.querySelector<HTMLElement>('[data-reveal]');
   if (!box || !reveal) return;
@@ -498,11 +531,40 @@ function setupGuess() {
     pctEl.textContent = p === null ? '' : s('GuessPercentRight', { percent: p });
   };
 
+  const streakEl = reveal.querySelector<HTMLElement>('[data-streak]');
+  const showStreak = (fresh: boolean, correct: boolean) => {
+    if (!streakEl) return;
+    const st = readStreaks(storage.get(STREAK_KEY))[city];
+    const n = currentStreak(st, date);
+    const best = st?.best ?? 0;
+    streakEl.replaceChildren();
+    if (n > 0) {
+      const num = el('span', fresh && correct ? { class: 'bump' } : {}, String(n));
+      const [before, after = ''] = s('StreakCurrent').split('{n}');
+      streakEl.append(before ?? '', num, after, ` · ${s('StreakBest', { n: best })}`);
+    } else if (best > 0) {
+      streakEl.append(`${s('StreakBroken')} · ${s('StreakBest', { n: best })}`);
+    } else {
+      streakEl.hidden = true;
+      return;
+    }
+    streakEl.hidden = false;
+  };
+
   const open = (choice: Choice, animate: boolean) => {
     box.toggleAttribute('data-done', true);
     for (const b of $$<HTMLButtonElement>('[data-choice]', box)) b.setAttribute('aria-pressed', String(b.dataset.choice === choice));
     if (resultEl) resultEl.textContent = s(choice === answer ? 'GuessRight' : 'GuessWrong');
     reveal.classList.add('on');
+    // 15 天对比图里"今天"那个点，猜完再显示
+    for (const x of $$('.spoiler-pending')) x.classList.remove('spoiler-pending');
+    if (animate) {
+      // 只有当场猜的才计入连续天数（同一天重复打开不会重复计）
+      const book = readStreaks(storage.get(STREAK_KEY));
+      book[city] = recordResult(book[city], date, choice === answer);
+      stored(storage.set(STREAK_KEY, JSON.stringify(book)));
+    }
+    showStreak(animate, choice === answer);
     if (animate) reveal.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
   };
 
@@ -677,6 +739,7 @@ function registerServiceWorker() {
 
 function init() {
   syncNav();
+  revealGuessTags();
   applyUnits(currentUnits());
   applyTime();
 

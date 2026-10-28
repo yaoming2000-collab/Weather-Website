@@ -5,7 +5,8 @@ import { ForecaProvider } from './foreca/client';
 import { MockProvider } from './mock';
 import type { WeatherProvider } from './provider';
 import { WeatherService } from './service';
-import { WikidataNames } from './wikidata';
+import { WikidataAreaSearch, WikidataNames } from './wikidata';
+import { MockHistory, OpenWeatherHistory, type PastWeatherSource } from './history';
 
 /** 同一个 Worker 实例内复用的内存缓存（没有 KV 和 Cache API 时使用，例如测试） */
 const memory = new MemoryStore();
@@ -23,8 +24,17 @@ export function createStore(env: Env): CacheStore {
   return local ?? shared ?? memory;
 }
 
+/**
+ * 去年同一天的实际天气：模拟数据模式用 MockHistory；否则配置了 OWM_KEY 才用 OpenWeather，
+ * 没配置时页面上"和去年比"显示 "--"（不报错）。
+ */
+export function createHistory(env: Env): PastWeatherSource | undefined {
+  if ((env.WEATHER_PROVIDER ?? 'foreca').toLowerCase() === 'mock') return new MockHistory();
+  return env.OWM_KEY ? new OpenWeatherHistory(env.OWM_KEY) : undefined;
+}
+
 export function createWeatherService(env: Env): WeatherService {
   // 调用统计写在 D1（线上）；没有数据库的测试环境不统计
   const usage = env.DB ? new D1Usage(env.DB) : undefined;
-  return new WeatherService(createProvider(env), createStore(env), undefined, undefined, undefined, usage, new WikidataNames());
+  return new WeatherService(createProvider(env), createStore(env), undefined, undefined, undefined, usage, new WikidataNames(), createHistory(env), new WikidataAreaSearch());
 }

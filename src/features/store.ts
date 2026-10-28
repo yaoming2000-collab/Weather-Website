@@ -1,5 +1,5 @@
 import { GUESS, RANKING } from '../config/features';
-import type { ClimateLevel, GuessChoice } from './climate';
+import type { ClimateLevel, GuessChoice, TodayComparison } from './climate';
 
 /**
  * 第 3 步新功能的小存储：猜一猜计数、排行榜数据。
@@ -45,6 +45,11 @@ export interface FeatureStore {
   /** 记录城市今天的偏差；同一城市 RANKING.recordEverySeconds 内只写一次 */
   recordAnomaly(rec: AnomalyRecord): Promise<void>;
   ranking(nowMs: number): Promise<Ranking>;
+  /**
+   * 定下城市当天的"和去年比"结果：第一次调用时存下传入的结果，以后同一城市同一天都返回第一次存的。
+   * 今天的预报一天里会更新，答案中途翻转会让"连续猜对"不公平（Darren 2026-10-28）。
+   */
+  freezeComparison(cityId: string, comparison: TodayComparison): Promise<TodayComparison>;
   /** 删除过期数据（每天由定时任务调用） */
   cleanup(nowMs: number): Promise<void>;
 }
@@ -101,6 +106,15 @@ export class MemoryFeatureStore implements FeatureStore {
   readonly persistent = false;
   private readonly guesses = new Map<string, GuessCounts>();
   private readonly anomalies = new Map<string, AnomalyRecord>();
+  private readonly frozen = new Map<string, TodayComparison>();
+
+  async freezeComparison(cityId: string, comparison: TodayComparison): Promise<TodayComparison> {
+    const key = `${cityId}|${comparison.date}`;
+    const existing = this.frozen.get(key);
+    if (existing) return existing;
+    this.frozen.set(key, comparison);
+    return comparison;
+  }
 
   async addGuess(cityId: string, date: string, choice: GuessChoice): Promise<GuessCounts> {
     const key = `${cityId}|${date}`;
@@ -129,6 +143,7 @@ export class MemoryFeatureStore implements FeatureStore {
     for (const key of this.guesses.keys()) if (key.split('|')[1]! < cutoff) this.guesses.delete(key);
     const keepFrom = nowMs - RANKING.keepDays * 86400_000;
     for (const [id, r] of this.anomalies) if (r.updatedAt < keepFrom) this.anomalies.delete(id);
+    for (const key of this.frozen.keys()) if (key.split('|')[1]! < cutoff) this.frozen.delete(key);
   }
 }
 
@@ -210,6 +225,22 @@ export class D1FeatureStore implements FeatureStore {
       .run();
   }
 
+  async freezeComparison(cityId: string, comparison: TodayComparison): Promise<TodayComparison> {
+    // 没有就写入，有就保持原样；然后读出当天的那一条（并发写入时也只有第一条生效）
+    const [, read] = await this.db.batch<{ data: string }>([
+      this.db
+        .prepare('INSERT INTO daily_comparisons (city_id, date, data) VALUES (?1, ?2, ?3) ON CONFLICT (city_id, date) DO NOTHING')
+        .bind(cityId, comparison.date, JSON.stringify(comparison)),
+      this.db.prepare('SELECT data FROM daily_comparisons WHERE city_id = ?1 AND date = ?2').bind(cityId, comparison.date),
+    ]);
+    const raw = read?.results?.[0]?.data;
+    try {
+      return raw ? (JSON.parse(raw) as TodayComparison) : comparison;
+    } catch {
+      return comparison;
+    }
+  }
+
   async ranking(nowMs: number): Promise<Ranking> {
     const since = nowMs - RANKING.windowHours * 3600_000;
     const [warm, cold] = await this.db.batch<AnomalyRow>([
@@ -232,6 +263,12 @@ export class D1FeatureStore implements FeatureStore {
       this.db.prepare('DELETE FROM guesses WHERE date < ?1').bind(guessCutoffDate(nowMs)),
       this.db.prepare('DELETE FROM anomalies WHERE updated_at < ?1').bind(nowMs - RANKING.keepDays * 86400_000),
     ]);
+    // 单独执行：还没执行迁移 0004 时不影响上面的清理
+    await this.db
+      .prepare('DELETE FROM daily_comparisons WHERE date < ?1')
+      .bind(guessCutoffDate(nowMs))
+      .run()
+      .catch((e: unknown) => console.warn('[d1] daily_comparisons cleanup failed', e));
   }
 }
 

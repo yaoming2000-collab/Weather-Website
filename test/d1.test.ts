@@ -16,7 +16,7 @@ let db: D1Database;
 beforeAll(async () => {
   proxy = await getPlatformProxy<{ DB: D1Database }>({ persist: false });
   db = proxy.env.DB;
-  for (const file of ['0001_features.sql', '0002_anomaly_valid_until.sql', '0003_usage.sql']) {
+  for (const file of ['0001_features.sql', '0002_anomaly_valid_until.sql', '0003_usage.sql', '0004_last_year.sql']) {
     const sql = readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8')
       .split('\n')
       .filter((l) => !l.trim().startsWith('--'))
@@ -36,6 +36,18 @@ function rec(cityId: string, deltaMax: number, updatedAt = NOW, date = '2026-10-
 }
 
 describe('D1 storage', () => {
+  it('keeps the first comparison of the day for a city', async () => {
+    const store = new D1FeatureStore(db);
+    const base = { date: '2026-10-22', maxTemp: 20, minTemp: 10, lastMaxTemp: 17, lastMinTemp: 9, lastIcon: 'sunny', deltaMax: 3, deltaMin: 1, level: 'warmer', tone: 'mild', answer: 'warmer', wording: 'warmer_mild' } as const;
+    const first = await store.freezeComparison('100', { ...base });
+    const second = await store.freezeComparison('100', { ...base, maxTemp: 18, deltaMax: 1, level: 'normal', answer: 'same', wording: 'normal' });
+    expect(first.answer).toBe('warmer');
+    expect(second.answer).toBe('warmer');
+    expect(second.deltaMax).toBe(3);
+    const otherDay = await store.freezeComparison('100', { ...base, date: '2026-10-23', answer: 'same' });
+    expect(otherDay.answer).toBe('same');
+  });
+
   it('adds votes atomically, including concurrent ones', async () => {
     const store = new D1FeatureStore(db);
     await Promise.all(Array.from({ length: 25 }, (_, i) => store.addGuess('100', '2026-10-22', i % 5 === 0 ? 'colder' : 'warmer')));

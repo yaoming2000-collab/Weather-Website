@@ -4,6 +4,7 @@ import { PAGE_STALE_WHILE_REVALIDATE, PAGE_TTL, PARTIAL_PAGE_TTL } from './confi
 import type { Env } from './env';
 import { fallbackCoords, parseCoords, parseLatLonPair, visitorCoords, type Coords } from './geo/visitor';
 import { DROPPED_LANGS, isLang, resolveLanguage, type Lang } from './i18n/languages';
+import { t } from './i18n/t';
 import { HomePage, type PageProps } from './pages/home';
 import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage, SettingsPage } from './pages/subpages';
 import { ClimatePage, RankingPage } from './pages/climate';
@@ -14,11 +15,14 @@ import { isLifeIndexKey, type LifeIndexKey } from './features/life';
 import { citiesPath, cityPath, pageCacheKey, pickNavParams, withNavParams } from './routing/urls';
 import { RANKING } from './config/features';
 import { GUESS_CHOICES, type GuessChoice } from './features/climate';
-import { anomalyRecord, cityFeatures } from './features';
+import { anomalyRecord, cityFeatures, withFrozenComparison } from './features';
 import { createFeatureStore, totalVotes, type AnomalyRecord, type FeatureStore, type GuessCounts, type Ranking } from './features/store';
 import { localDate } from './time/cityTime';
 import { createWeatherService } from './weather';
-import { isNotFound, NAME_BUDGET_MS, type WeatherService } from './weather/service';
+import { isNotFound, NAME_BUDGET_MS, withBudget, type WeatherService } from './weather/service';
+
+/** 定下当天对比结果时最多等数据库多久 */
+const FREEZE_BUDGET_MS = 800;
 
 type AppEnv = { Bindings: Env; Variables: { weather: WeatherService; features: FeatureStore } };
 type C = Context<AppEnv>;
@@ -123,7 +127,9 @@ export function createApp(
       }
       // 城市名还没查好时只缓存 1 分钟，下次就是本地名字
       c.header('Cache-Control', `public, max-age=${complete ? 3600 : 60}`);
-      return c.json({ items: items.map((l) => ({ id: l.id, name: l.name, admin: l.adminArea, country: l.country })) });
+      // 按县、区名字找到的附近城市：显示成"惠东县（平山）"
+      const label = (l: (typeof items)[number]) => (l.area && l.area !== l.name ? t(lang, 'SearchAreaPlace', { area: l.area, place: l.name }) : l.name);
+      return c.json({ items: items.map((l) => ({ id: l.id, name: label(l), admin: l.adminArea, country: l.country })) });
     } catch {
       return c.json({ error: 'unavailable' }, 503);
     }
@@ -441,7 +447,15 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
     // 城市名还没查好（用了英文）时，和缺数据一样只缓存 1 分钟
     const bundle = { ...raw, location: named.locs[0] ?? base, missing: named.complete ? raw.missing : [...raw.missing, 'names'] };
     const now = c.var.weather.nowMs();
-    const features = cityFeatures(bundle, now);
+    // 当天的"和去年比"结果以第一次算出的为准（数据库最多等 0.8 秒，超时就用刚算出的）
+    const computed = cityFeatures(bundle, now);
+    const frozen = computed.comparison
+      ? await withBudget(c.var.features.freezeComparison(raw.location.id, computed.comparison), FREEZE_BUDGET_MS).catch((e) => {
+          console.warn('[climate] freeze failed', e);
+          return null;
+        })
+      : null;
+    const features = withFrozenComparison(computed, frozen);
     // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
     // 排行榜存英文名（显示时再按页面语言换），所以用原始的地点信息
     const record = anomalyRecord(raw, features.comparison, now);

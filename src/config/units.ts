@@ -14,7 +14,8 @@ export const FAHRENHEIT_REGIONS: readonly string[] = ['US', 'LR', 'MM', 'BS', 'B
 export const EARLY_UNITS_SCRIPT = `(function(){try{var f=false,s=null,l=null;try{s=localStorage.getItem(${JSON.stringify(UNITS_KEY)});l=localStorage.getItem(${JSON.stringify(UNITS_KEY_LEGACY)})}catch(e){}
 if(s){f=JSON.parse(s).temp==='f'}else if(l==='imperial'||l==='metric'){f=l==='imperial'}else{var L=navigator.languages&&navigator.languages.length?navigator.languages:[navigator.language||''];
 for(var i=0;i<L.length;i++){var m=/[-_]([A-Za-z]{2})(?=[-_]|$)/.exec(L[i]);if(m){f=${JSON.stringify(FAHRENHEIT_REGIONS)}.indexOf(m[1].toUpperCase())>=0;break}}}
-if(!f)return;var n=document.querySelectorAll('[data-c]');for(var j=0;j<n.length;j++)n[j].textContent=String(Math.round(Number(n[j].getAttribute('data-c'))*9/5+32))}catch(e){}})()`;
+if(!f)return;var n=document.querySelectorAll('[data-c]');for(var j=0;j<n.length;j++)n[j].textContent=String(Math.round(Number(n[j].getAttribute('data-c'))*9/5+32));
+var d=document.querySelectorAll('[data-dca]');for(var k=0;k<d.length;k++)d[k].textContent=String(Math.round(Math.abs(Number(d[k].getAttribute('data-dca')))*1.8))}catch(e){}})()`;
 
 /**
  * 首屏内联脚本：页面是缓存的（最多半小时前生成），在首次绘制前先把已经过去的小时藏起来、
