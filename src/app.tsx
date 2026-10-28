@@ -3,7 +3,7 @@ import { normalizeChannel, DEFAULT_CHANNEL, type Channel } from './config/channe
 import { PAGE_STALE_WHILE_REVALIDATE, PAGE_TTL, PARTIAL_PAGE_TTL } from './config/thresholds';
 import type { Env } from './env';
 import { fallbackCoords, parseCoords, parseLatLonPair, visitorCoords, type Coords } from './geo/visitor';
-import { isLang, resolveLanguage, type Lang } from './i18n/languages';
+import { DROPPED_LANGS, isLang, resolveLanguage, type Lang } from './i18n/languages';
 import { HomePage, type PageProps } from './pages/home';
 import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage } from './pages/subpages';
 import { ClimatePage, RankingPage } from './pages/climate';
@@ -60,6 +60,17 @@ export function createApp(
     // Foreca 调用统计：攒够一批后在后台写进数据库
     const flush = shared.usageFlush();
     if (flush) waitUntil(c, flush);
+  });
+
+  // 不再支持的语言（希伯来语）：旧网址跳转到同一页面的英文版，保留查询参数
+  app.use('/:channel/:lang/*', async (c, next) => {
+    const lang = c.req.param('lang');
+    if (lang && DROPPED_LANGS.has(lang)) {
+      const url = new URL(c.req.url);
+      url.pathname = url.pathname.replace(`/${lang}/`, '/en/');
+      return c.redirect(url.pathname + url.search, 301);
+    }
+    await next();
   });
 
   // ---------- 接口（给浏览器脚本用） ----------

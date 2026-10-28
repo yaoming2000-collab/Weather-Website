@@ -8,7 +8,6 @@ import en from './locales/en.json';
 import es from './locales/es.json';
 import fi from './locales/fi.json';
 import fr from './locales/fr.json';
-import he from './locales/he.json';
 import hi from './locales/hi.json';
 import id from './locales/id.json';
 import it from './locales/it.json';
@@ -33,7 +32,7 @@ import zh from './locales/zh.json';
  */
 export type Messages = Record<string, string>;
 
-const CATALOG: Record<Lang, Messages> = { ar, bp, da, de, el, en, es, fi, fr, he, hi, id, it, ja, ko, lm, nl, no, pl, pt, ru, sv, th, tr, uk, vi, zh };
+const CATALOG: Record<Lang, Messages> = { ar, bp, da, de, el, en, es, fi, fr, hi, id, it, ja, ko, lm, nl, no, pl, pt, ru, sv, th, tr, uk, vi, zh };
 
 const merged = new Map<Lang, Messages>();
 

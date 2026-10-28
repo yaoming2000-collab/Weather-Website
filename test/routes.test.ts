@@ -144,6 +144,20 @@ describe('city page', () => {
     expect(html).toContain('"channel":"wxiaomi"');
   });
 
+  it('sends old Hebrew links to the English page', async () => {
+    for (const [from, to] of [
+      ['/wmi/he/w/102643743?session=1', '/wmi/en/w/102643743?session=1'],
+      ['/mi/iw/w/102643743/hourly', '/mi/en/w/102643743/hourly'],
+      ['/wme/he/cities', '/wme/en/cities'],
+    ]) {
+      const res = await app().request(req(from));
+      expect(res.status, from).toBe(301);
+      expect(res.headers.get('Location'), from).toBe(to);
+    }
+    const home = await app().request(req('/', { headers: { 'Accept-Language': 'he-IL,he;q=0.9' } }));
+    expect(home.headers.get('Location')).toMatch(/^\/wmi\/en\/w\//);
+  });
+
   it('sets right-to-left for Arabic', async () => {
     const html = await (await app().request(req('/wmi/ar/w/100108410'))).text();
     expect(html).toContain('dir="rtl"');
