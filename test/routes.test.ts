@@ -123,7 +123,7 @@ describe('city page', () => {
 
   it('shows a dash instead of 0 when a value is missing', async () => {
     const html = await (await app().request(req('/wmi/en/w/100108410'))).text();
-    expect(html).toMatch(/Visibility<\/span><\/h3><div class="big">—/);
+    expect(html).toMatch(/Visibility<\/span><\/h3><div class="big"><span>—<\/span>/);
   });
 
   it('uses the old site translations', async () => {
@@ -158,7 +158,7 @@ describe('city page', () => {
       ['/wmi/he/w/102643743?session=1', '/wmi/en/w/102643743?session=1'],
       ['/mi/iw/w/102643743/hourly', '/mi/en/w/102643743/hourly'],
       ['/wme/he/cities', '/wme/en/cities'],
-    ]) {
+    ] as const) {
       const res = await app().request(req(from));
       expect(res.status, from).toBe(301);
       expect(res.headers.get('Location'), from).toBe(to);

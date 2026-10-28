@@ -91,7 +91,6 @@
   "ContactUs": "Contact Us",
   "PrivacyPolicy": "Privacy Policy",
   "TermsOfUse": "Terms of Use",
-  "SwitchUnits": "Switch °C / °F",
   "RemoveFromMyCities": "Remove from My Cities",
   "CurrentLocation": "Current location",
   "Back": "Back",
@@ -298,5 +297,8 @@
   "LifeWhy": "What we looked at",
   "LifeMore": "More activities",
   "Cond_dusty": "Dust",
-  "Cond_sandy": "Heavy dust"
+  "Cond_sandy": "Heavy dust",
+  "UnitsTitle": "Units",
+  "TemperatureLabel": "Temperature",
+  "WindSpeedLabel": "Wind speed"
 }

@@ -29,7 +29,7 @@ export function Temp(props: { c: number | null | undefined; deg?: boolean }) {
   );
 }
 
-/** 风速：数据是 m/s，默认显示 km/h，华氏度用户显示 mph */
+/** 风速：数据是 m/s，默认显示 km/h；浏览器按用户设置换成 m/s 或 mph */
 export function Speed(props: { ms: number | null | undefined }) {
   if (props.ms === null || props.ms === undefined) return <span>{DASH}</span>;
   return (
@@ -39,7 +39,18 @@ export function Speed(props: { ms: number | null | undefined }) {
   );
 }
 
-/** 降水量：mm；华氏度用户显示英寸 */
+/** 距离（能见度）：数据是米，默认显示公里；°F 用户显示英里 */
+export function Distance(props: { m: number | null | undefined }) {
+  if (props.m === null || props.m === undefined) return <span>{DASH}</span>;
+  const km = props.m / 1000;
+  return (
+    <bdi dir="ltr">
+      <span data-m={String(props.m)}>{km < 10 ? Math.round(km * 10) / 10 : Math.round(km)}</span> <small data-dist-unit>km</small>
+    </bdi>
+  );
+}
+
+/** 降水量：mm；°F 用户显示英寸 */
 export function Precip(props: { mm: number | null | undefined }) {
   if (props.mm === null || props.mm === undefined) return <span>{DASH}</span>;
   return (
@@ -246,7 +257,7 @@ export function TopBar(props: { location: WeatherLocation; channel: Channel; lan
         </h1>
         <div class="region">{[loc.adminArea, loc.country].filter((x) => x && x !== loc.name).join(', ')}</div>
       </div>
-      <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(lang, 'SwitchUnits')}>
+      <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(lang, 'UnitsTitle')}>
         °C
       </button>
       <button class="btn" type="button" data-save aria-pressed="false" aria-label={t(lang, 'AddToMyCities')}>
@@ -272,7 +283,7 @@ export function SubBar(props: { location: WeatherLocation; channel: Channel; lan
           <span>{props.title}</span>
         </h1>
       </div>
-      <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(props.lang, 'SwitchUnits')}>
+      <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(props.lang, 'UnitsTitle')}>
         °C
       </button>
     </header>
@@ -323,6 +334,9 @@ export function clientStrings(lang: Lang): Record<string, string> {
     'GuessWrong',
     'GuessPercentRight',
     'ForecastFeedbackThanks',
+    'UnitsTitle',
+    'TemperatureLabel',
+    'WindSpeedLabel',
   ];
   const out: Record<string, string> = {};
   for (const k of keys) out[k] = t(lang, k);

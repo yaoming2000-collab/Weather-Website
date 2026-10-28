@@ -21,7 +21,7 @@ import {
 import { entryKey, GUESS_KEY, isChoice, percentRight, readBook, VOTE_KEY, writeBook, type Choice, type Counts } from './lib/interact';
 import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS } from './lib/time';
 import { drawCard, shareOrDownload } from './share';
-import { defaultSystem, formatPrecip, formatSpeed, formatTemp, formatTempDelta, type UnitSystem } from './lib/units';
+import { defaultUnits, formatDistance, formatPrecip, formatSpeed, formatTemp, formatTempDelta, fromLegacy, parseUnits, type Units } from './lib/units';
 
 interface PageData {
   lang: string;
@@ -70,31 +70,99 @@ function syncNav(root: ParentNode = document) {
 
 // ---------- 2. 单位 ----------
 
-const UNITS_KEY = 'weather.units';
+/** 旧版设置（metric / imperial），读一次后迁移到新键 */
+const UNITS_KEY_LEGACY = 'weather.units';
+const UNITS_KEY = 'weather.units.v2';
 
-function currentSystem(): UnitSystem {
-  const saved = storage.get(UNITS_KEY);
-  if (saved === 'metric' || saved === 'imperial') return saved;
-  return defaultSystem(navigator.languages?.length ? navigator.languages : [navigator.language]);
+function currentUnits(): Units {
+  const saved = parseUnits(storage.get(UNITS_KEY));
+  if (saved) return saved;
+  const fallback = defaultUnits(navigator.languages?.length ? navigator.languages : [navigator.language]);
+  return fromLegacy(storage.get(UNITS_KEY_LEGACY), fallback) ?? fallback;
 }
 
-function applyUnits(system: UnitSystem, root: ParentNode = document) {
-  for (const el of $$('[data-c]', root)) el.textContent = formatTemp(Number(el.dataset.c), system);
-  for (const el of $$('[data-dc]', root)) el.textContent = formatTempDelta(Number(el.dataset.dc), system);
-  for (const el of $$('[data-dca]', root)) el.textContent = formatTempDelta(Math.abs(Number(el.dataset.dca)), system).replace('+', '');
-  for (const el of $$('[data-ms]', root)) {
-    const f = formatSpeed(Number(el.dataset.ms), system);
-    el.textContent = f.value;
-    const unit = el.parentElement?.querySelector('[data-speed-unit]');
-    if (unit) unit.textContent = f.unit;
+function saveUnits(u: Units) {
+  storage.set(UNITS_KEY, JSON.stringify(u));
+}
+
+function applyUnits(u: Units, root: ParentNode = document) {
+  for (const el of $$('[data-c]', root)) el.textContent = formatTemp(Number(el.dataset.c), u);
+  for (const el of $$('[data-dc]', root)) el.textContent = formatTempDelta(Number(el.dataset.dc), u);
+  for (const el of $$('[data-dca]', root)) el.textContent = formatTempDelta(Math.abs(Number(el.dataset.dca)), u).replace('+', '');
+  const pairs: Array<[string, string, (v: number, u: Units) => { value: string; unit: string }]> = [
+    ['ms', '[data-speed-unit]', formatSpeed],
+    ['mm', '[data-mm-unit]', formatPrecip],
+    ['m', '[data-dist-unit]', formatDistance],
+  ];
+  for (const [attr, unitSel, fmt] of pairs) {
+    for (const el of $$(`[data-${attr}]`, root)) {
+      const f = fmt(Number(el.getAttribute(`data-${attr}`)), u);
+      el.textContent = f.value;
+      const unit = el.parentElement?.querySelector(unitSel);
+      if (unit) unit.textContent = f.unit;
+    }
   }
-  for (const el of $$('[data-mm]', root)) {
-    const f = formatPrecip(Number(el.dataset.mm), system);
-    el.textContent = f.value;
-    const unit = el.parentElement?.querySelector('[data-mm-unit]');
-    if (unit) unit.textContent = f.unit;
+  for (const b of $$('[data-units-toggle]')) b.textContent = u.temp === 'f' ? '°F' : '°C';
+}
+
+/**
+ * 单位设置：点右上角 °C/°F 按钮弹出一个小面板，温度和风速分开选，选了立即生效并记住。
+ */
+function setupUnits() {
+  let panel: HTMLElement | null = null;
+  const close = () => {
+    panel?.remove();
+    panel = null;
+    for (const b of $$('[data-units-toggle]')) b.setAttribute('aria-expanded', 'false');
+  };
+  const open = (button: HTMLElement) => {
+    close();
+    const u = currentUnits();
+    panel = el('div', { class: 'units-pop', role: 'dialog', 'aria-label': s('UnitsTitle') });
+    const group = (label: string, options: Array<[string, string]>, value: string, pick: (v: string) => void) => {
+      const row = el('div', { class: 'units-row' });
+      row.append(el('div', { class: 'units-label' }, label));
+      const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': label, dir: 'ltr' });
+      for (const [v, text] of options) {
+        const b = el('button', { type: 'button', role: 'radio', 'aria-checked': String(v === value) }, text);
+        b.addEventListener('click', () => {
+          pick(v);
+          for (const x of $$('[role="radio"]', seg)) x.setAttribute('aria-checked', String(x === b));
+        });
+        seg.append(b);
+      }
+      row.append(seg);
+      return row;
+    };
+    const update = (patch: Partial<Units>) => {
+      const next = { ...currentUnits(), ...patch };
+      saveUnits(next);
+      applyUnits(next);
+    };
+    panel.append(
+      group(s('TemperatureLabel'), [['c', '°C'], ['f', '°F']], u.temp, (v) => update({ temp: v as Units['temp'] })),
+      group(s('WindSpeedLabel'), [['kmh', 'km/h'], ['ms', 'm/s'], ['mph', 'mph']], u.wind, (v) => update({ wind: v as Units['wind'] })),
+    );
+    const r = button.getBoundingClientRect();
+    panel.style.top = `${Math.round(r.bottom + 8)}px`;
+    document.body.append(panel);
+    button.setAttribute('aria-expanded', 'true');
+    (panel.querySelector('[aria-checked="true"]') as HTMLElement | null)?.focus();
+  };
+  for (const b of $$('[data-units-toggle]')) {
+    b.setAttribute('aria-haspopup', 'dialog');
+    b.setAttribute('aria-expanded', 'false');
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (panel) close();
+      else open(b);
+    });
   }
-  for (const b of $$('[data-units-toggle]')) b.textContent = system === 'imperial' ? '°F' : '°C';
+  document.addEventListener('click', (e) => {
+    if (panel && !panel.contains(e.target as Node)) close();
+  });
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && close());
+  addEventListener('scroll', close, { passive: true });
 }
 
 // ---------- 3. 现在、今天、更新时间 ----------
@@ -173,7 +241,7 @@ async function refreshLive(retry = true) {
     document.body.className = doc.body.className;
     const theme = doc.querySelector('meta[name="theme-color"]')?.getAttribute('content');
     if (theme) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme);
-    applyUnits(currentSystem());
+    applyUnits(currentUnits());
     applyTime();
   } catch {
     // 网络不好时保持现有内容
@@ -297,7 +365,7 @@ async function renderSavedList() {
         }),
       ),
     );
-    applyUnits(currentSystem(), box);
+    applyUnits(currentUnits(), box);
   };
   draw(list);
   try {
@@ -460,7 +528,7 @@ function setupShare() {
   for (const b of $$<HTMLButtonElement>('[data-share]')) {
     b.addEventListener('click', async () => {
       const delta = Math.abs(Number(b.dataset.shareDelta ?? 0));
-      const n = formatTempDelta(delta, currentSystem()).replace('+', '');
+      const n = formatTempDelta(delta, currentUnits()).replace('+', '');
       const verdict = (b.dataset.shareTpl ?? '').split('{delta}').join(n);
       const [y, m, d] = (b.dataset.shareDate ?? '').split('-').map(Number) as [number, number, number];
       const dateLabel = new Intl.DateTimeFormat(data.intl, { month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, d, 12)));
@@ -504,16 +572,10 @@ function setupSkyIdle() {
 
 function init() {
   syncNav();
-  applyUnits(currentSystem());
+  applyUnits(currentUnits());
   applyTime();
 
-  for (const b of $$('[data-units-toggle]')) {
-    b.addEventListener('click', () => {
-      const next: UnitSystem = currentSystem() === 'imperial' ? 'metric' : 'imperial';
-      storage.set(UNITS_KEY, next);
-      applyUnits(next);
-    });
-  }
+  setupUnits();
 
   setupSaveButton();
   void migrateLegacy().then(() => {

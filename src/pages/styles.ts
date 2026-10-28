@@ -174,6 +174,15 @@ body{--cl:255,255,255}
 .btn{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:40px;height:40px;padding:0 11px;border-radius:999px;border:0;
   background:var(--chip);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
 .btn:active{background:rgba(255,255,255,.28)}
+/* 单位设置面板（点 °C/°F 按钮弹出） */
+.units-pop{position:fixed;inset-inline-end:12px;z-index:60;width:min(300px,calc(100vw - 24px));padding:14px;border-radius:var(--r-md);
+  background:rgba(14,28,58,.94);box-shadow:0 12px 32px rgba(0,0,0,.35);color:var(--fg);display:grid;gap:12px}
+.units-row{display:grid;gap:6px}
+.units-label{font-size:13px;color:var(--mut)}
+.seg{display:flex;gap:4px;padding:3px;border-radius:999px;background:rgba(255,255,255,.1)}
+.seg button{flex:1;min-height:36px;border:0;border-radius:999px;background:transparent;color:inherit;font:inherit;font-size:15px;font-weight:600}
+.seg button[aria-checked="true"]{background:#fff;color:#16305f}
+.seg button:focus-visible{outline:2px solid #ffd36b;outline-offset:1px}
 .btn svg{width:20px;height:20px}
 .btn[aria-pressed="true"] svg{fill:#ffd36b;stroke:#ffd36b}
 .back{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--mut)}

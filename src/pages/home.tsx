@@ -24,7 +24,7 @@ import {
 } from '../weather/derive';
 import type { CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
-import { AdSlot, DASH, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
+import { AdSlot, DASH, Distance, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
 import { G } from './glyphs';
 import { computeSky, displayIcon, type Sky } from './sky';
 
@@ -525,8 +525,7 @@ export function HomePage(p: PageProps) {
         <div class="tile">
           <Sec tag="h3" icon={G.eye()} title={t(lang, 'WeatherVisibility')} />
           <div class="big">
-            {c.visibility === null ? DASH : Math.round(c.visibility / 1000)}
-            <small>km</small>
+            <Distance m={c.visibility} />
           </div>
           <div class="note">{t(lang, visibilityKey(c.visibility))}</div>
         </div>

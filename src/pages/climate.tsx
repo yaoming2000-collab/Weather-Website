@@ -289,7 +289,7 @@ export function RankingPage(props: { ranking: Ranking; channel: Channel; lang: L
           </h1>
           <div class="region">{t(lang, 'RankingSubtitle')}</div>
         </div>
-        <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(lang, 'SwitchUnits')}>
+        <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(lang, 'UnitsTitle')}>
           °C
         </button>
       </header>

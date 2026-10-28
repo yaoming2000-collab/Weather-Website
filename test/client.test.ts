@@ -1,24 +1,48 @@
 import { describe, expect, it } from 'vitest';
 import { addCity, MAX_CITIES, mergeCities, parseLegacy, parseSaved, readCookie, removeCity } from '../client/lib/saved';
 import { cityToday, minutesAgo, pastHourCount } from '../client/lib/time';
-import { defaultSystem, formatPrecip, formatSpeed, formatTemp, formatTempDelta } from '../client/lib/units';
+import { defaultUnits, formatDistance, formatPrecip, formatSpeed, formatTemp, formatTempDelta, fromLegacy, parseUnits } from '../client/lib/units';
 
 describe('units', () => {
-  it('defaults to Fahrenheit for US visitors only', () => {
-    expect(defaultSystem(['en-US', 'en'])).toBe('imperial');
-    expect(defaultSystem(['en-GB'])).toBe('metric');
-    expect(defaultSystem(['es-419', 'es'])).toBe('metric');
-    expect(defaultSystem(['ar'])).toBe('metric');
+  const C = { temp: 'c', wind: 'kmh' } as const;
+  const F = { temp: 'f', wind: 'mph' } as const;
+
+  it('picks temperature and wind units by region', () => {
+    expect(defaultUnits(['en-US', 'en'])).toEqual({ temp: 'f', wind: 'mph' });
+    expect(defaultUnits(['en-GB'])).toEqual({ temp: 'c', wind: 'mph' });
+    expect(defaultUnits(['ru-RU'])).toEqual({ temp: 'c', wind: 'ms' });
+    expect(defaultUnits(['nb-NO'])).toEqual({ temp: 'c', wind: 'ms' });
+    expect(defaultUnits(['ja-JP'])).toEqual({ temp: 'c', wind: 'ms' });
+    expect(defaultUnits(['es-419', 'es'])).toEqual({ temp: 'c', wind: 'kmh' });
+    expect(defaultUnits(['de-DE'])).toEqual({ temp: 'c', wind: 'kmh' });
+    // 没有地区时按语言
+    expect(defaultUnits(['fi'])).toEqual({ temp: 'c', wind: 'ms' });
+    expect(defaultUnits(['ar'])).toEqual({ temp: 'c', wind: 'kmh' });
   });
 
-  it('converts temperature, deltas, wind and precipitation', () => {
-    expect(formatTemp(20, 'imperial')).toBe('68');
-    expect(formatTemp(-0.4, 'metric')).toBe('0');
-    expect(formatTempDelta(6, 'imperial')).toBe('+11');
-    expect(formatTempDelta(-3, 'metric')).toBe('-3');
-    expect(formatSpeed(10, 'metric')).toEqual({ value: '36', unit: 'km/h' });
-    expect(formatSpeed(10, 'imperial')).toEqual({ value: '22', unit: 'mph' });
-    expect(formatPrecip(25.4, 'imperial')).toEqual({ value: '1.00', unit: 'in' });
+  it('keeps the old metric/imperial choice and reads saved settings safely', () => {
+    expect(fromLegacy('imperial', { temp: 'c', wind: 'ms' })).toEqual({ temp: 'f', wind: 'mph' });
+    expect(fromLegacy('metric', { temp: 'f', wind: 'mph' })).toEqual({ temp: 'c', wind: 'kmh' });
+    expect(fromLegacy('metric', { temp: 'c', wind: 'ms' })).toEqual({ temp: 'c', wind: 'ms' });
+    expect(fromLegacy(null, C)).toBeNull();
+    expect(parseUnits('{"temp":"f","wind":"ms"}')).toEqual({ temp: 'f', wind: 'ms' });
+    expect(parseUnits('{"temp":"k"}')).toBeNull();
+    expect(parseUnits('oops')).toBeNull();
+  });
+
+  it('converts temperature, deltas, wind, precipitation and distance', () => {
+    expect(formatTemp(20, F)).toBe('68');
+    expect(formatTemp(-0.4, C)).toBe('0');
+    expect(formatTempDelta(6, F)).toBe('+11');
+    expect(formatTempDelta(-3, C)).toBe('-3');
+    expect(formatSpeed(10, C)).toEqual({ value: '36', unit: 'km/h' });
+    expect(formatSpeed(10, F)).toEqual({ value: '22', unit: 'mph' });
+    expect(formatSpeed(10, { temp: 'c', wind: 'ms' })).toEqual({ value: '10', unit: 'm/s' });
+    expect(formatPrecip(25.4, F)).toEqual({ value: '1.00', unit: 'in' });
+    expect(formatDistance(16093, F)).toEqual({ value: '10', unit: 'mi' });
+    expect(formatDistance(4000, F)).toEqual({ value: '2.5', unit: 'mi' });
+    expect(formatDistance(24000, C)).toEqual({ value: '24', unit: 'km' });
+    expect(formatDistance(800, C)).toEqual({ value: '0.8', unit: 'km' });
   });
 });
 
