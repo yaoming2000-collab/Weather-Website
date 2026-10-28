@@ -12,6 +12,7 @@ import { currentHourIndex, localDate, monthDayOf, nextLocalMidnight } from '../t
 import { forecaLocationLang } from './foreca/langs';
 import { intlLocale, isLang } from '../i18n/languages';
 import { WIKIDATA_LANGS, type PlaceNamesSource, type WikiPlace } from './wikidata';
+import { isoOfCountry } from '../geo/countries';
 import { normalizeSearch, searchLongEnough } from './search';
 
 export { normalizeSearch, searchLongEnough };
@@ -61,6 +62,8 @@ export class WeatherService {
 
   /** Wikidata 出错后暂停查询到这个时刻（同一实例内），期间城市名用英文 */
   private namesPausedUntil = 0;
+  /** 正在向 Wikidata 查询的城市（同一实例内），同时打开同一个新城市时只查一次 */
+  private readonly namesInflight = new Map<string, Promise<WikiPlace | undefined>>();
 
   /**
    * 告诉数据模块自己在哪个 Cloudflare 机房（request.cf.colo，如 "HKG"）。
@@ -223,7 +226,7 @@ export class WeatherService {
    * 其余 9 种语言从 Wikidata 批量查城市名，国家名用 Intl.DisplayNames 翻译，缓存 90 天，不显示行政区（Wikidata 没有对应的本地化行政区名）。
    * 查不到或出错时保留英文。
    */
-  async localize(locs: WeatherLocation[], lang: string): Promise<WeatherLocation[]> {
+  async localize(locs: WeatherLocation[], lang: string, opts: { keepAdmin?: boolean } = {}): Promise<WeatherLocation[]> {
     if (lang === 'en' || locs.length === 0) return locs;
     const fl = forecaLocationLang(lang);
     if (fl !== 'en') {
@@ -243,7 +246,15 @@ export class WeatherService {
       const p = places.get(l.id);
       const name = p && prefs.map((x) => p.labels[x]).find(Boolean);
       if (!p || !name) return l;
-      return { ...l, name, adminArea: null, country: (p.iso && regionName(p.iso, intl)) || l.country };
+      // 国家优先按 Foreca 的英文国家名（和英文页面一致，例如香港显示"香港"而不是"中国"），其次用 Wikidata 的
+      const iso = isoOfCountry(l.country) ?? p.iso;
+      return {
+        ...l,
+        name,
+        // 搜索结果保留英文的州/省，同名城市（例如很多个 Springfield）才分得清
+        adminArea: opts.keepAdmin ? l.adminArea : null,
+        country: (iso && regionName(iso, intl)) || l.country,
+      };
     });
   }
 
@@ -251,13 +262,20 @@ export class WeatherService {
    * 本地化，但最多等 budgetMs：第一次遇到的城市名可能要查 Foreca 或 Wikidata，页面不等太久，
    * 先用英文，查询交给 defer（waitUntil）继续完成并缓存，下一次就是本地化的名字。
    */
-  async localizeWithin(locs: WeatherLocation[], lang: string, budgetMs: number, defer?: (p: Promise<unknown>) => void): Promise<WeatherLocation[]> {
-    const p = this.localize(locs, lang);
+  async localizeWithin(
+    locs: WeatherLocation[],
+    lang: string,
+    budgetMs: number,
+    defer?: (p: Promise<unknown>) => void,
+    opts: { keepAdmin?: boolean } = {},
+  ): Promise<{ locs: WeatherLocation[]; complete: boolean }> {
+    const p = this.localize(locs, lang, opts);
     defer?.(p.catch(() => undefined));
     try {
-      return await withBudget(p, budgetMs);
+      return { locs: await withBudget(p, budgetMs), complete: true };
     } catch {
-      return locs;
+      // 没等到：先用英文，调用方据此把页面只缓存 1 分钟
+      return { locs, complete: false };
     }
   }
 
@@ -278,22 +296,42 @@ export class WeatherService {
       }),
     );
     if (missing.length === 0 || now < this.namesPausedUntil || !this.placeNames) return out;
+    const toFetch = missing.filter((id) => !this.namesInflight.has(id));
+    if (toFetch.length) {
+      const batch = this.fetchPlaces(toFetch, now);
+      for (const id of toFetch) {
+        const one = batch.then((m) => m.get(id)).finally(() => this.namesInflight.delete(id));
+        this.namesInflight.set(id, one);
+      }
+    }
+    await Promise.all(
+      missing.map(async (id) => {
+        const v = await this.namesInflight.get(id)?.catch(() => undefined);
+        if (v) out.set(id, v);
+      }),
+    );
+    return out;
+  }
+
+  private async fetchPlaces(ids: string[], now: number): Promise<Map<string, WikiPlace>> {
     try {
-      const found = await this.placeNames.lookup(missing);
+      const found = await this.placeNames!.lookup(ids);
       const freshUntil = now + DATA_TTL.placeNames * 1000;
+      const out = new Map<string, WikiPlace>();
       await Promise.all(
-        missing.map((id) => {
+        ids.map((id) => {
           // 查不到的城市也记下来（空名字），免得每次都再查
           const value = found.get(id) ?? { labels: {}, iso: null };
           out.set(id, value);
           return this.store.put(this.wikiKey(id), { value, fetchedAt: now, freshUntil }, DATA_TTL.placeNames * 2).catch(() => undefined);
         }),
       );
+      return out;
     } catch (err) {
       this.namesPausedUntil = now + FAILURE_TTL.transient * 1000;
       this.log(`[names] Wikidata unavailable: ${(err as Error).message}`);
+      return new Map();
     }
-    return out;
   }
 
   private wikiKey(id: string): string {
@@ -319,11 +357,12 @@ export class WeatherService {
       unique.map(async (id): Promise<CityCard | null> => {
         try {
           const base = await this.location(id);
-          const [[location = base], current, daily] = await Promise.all([
+          const [named, current, daily] = await Promise.all([
             this.localizeWithin([base], lang, NAME_BUDGET_MS, defer),
             this.current(id),
             this.daily(id, base.timezone).catch(() => null),
           ]);
+          const location = named.locs[0] ?? base;
           const today = daily?.data.find((d) => d.date === localDate(this.now(), base.timezone)) ?? daily?.data[0];
           return {
             id,
@@ -517,7 +556,9 @@ function withBudget<T>(p: Promise<T>, ms: number): Promise<T> {
 /** 国家或地区名（ISO 代码 → 指定语言），浏览器和 Workers 都自带 */
 function regionName(iso: string, intl: string): string | null {
   try {
-    const name = new Intl.DisplayNames([intl], { type: 'region' }).of(iso);
+    // 香港、澳门的完整名称很长（"中華人民共和国香港特別行政区"），用简短的写法
+    const style = iso === 'HK' || iso === 'MO' ? 'short' : 'long';
+    const name = new Intl.DisplayNames([intl], { type: 'region', style }).of(iso);
     return name && name !== iso ? name : null;
   } catch {
     return null;

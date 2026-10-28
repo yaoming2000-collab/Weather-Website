@@ -22,7 +22,7 @@ export const WIKIDATA_LANGS: Record<string, readonly string[]> = {
 export interface WikiPlace {
   /** Wikidata 标签语言 → 名字 */
   labels: Record<string, string>;
-  /** 国家 ISO 3166-1 两位代码 */
+  /** 国家 ISO 3166-1 两位代码（Wikidata 上只有一个国家时才有，否则 null） */
   iso: string | null;
 }
 
@@ -72,14 +72,17 @@ export function parseResults(bindings: Binding[]): Map<string, WikiPlace> {
     if (!cur || links > cur.links) best.set(gn, { item, links });
   }
   const out = new Map<string, WikiPlace>();
+  const isos = new Map<string, Set<string>>();
   for (const b of bindings) {
     const gn = b.gn?.value;
     if (!gn || best.get(gn)?.item !== b.item?.value) continue;
     const place = out.get(gn) ?? { labels: {}, iso: null };
     if (b.lang?.value && b.label?.value && !place.labels[b.lang.value]) place.labels[b.lang.value] = b.label.value;
-    if (!place.iso && b.iso?.value) place.iso = b.iso.value.toUpperCase();
+    if (b.iso?.value) (isos.get(gn) ?? isos.set(gn, new Set()).get(gn)!).add(b.iso.value.toUpperCase());
     out.set(gn, place);
   }
+  // 有多个国家（有争议的地区）时不猜
+  for (const [gn, set] of isos) if (set.size === 1) out.get(gn)!.iso = [...set][0]!;
   return out;
 }
 

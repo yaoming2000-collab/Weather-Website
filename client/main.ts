@@ -158,8 +158,9 @@ function setupUnits() {
       else open(b);
     });
   }
-  document.addEventListener('click', (e) => {
-    if (panel && !panel.contains(e.target as Node)) close();
+  // pointerdown：iOS Safari 点在不可点击的区域时不一定触发 click
+  document.addEventListener('pointerdown', (e) => {
+    if (panel && !panel.contains(e.target as Node) && !(e.target as Element).closest?.('[data-units-toggle]')) close();
   });
   document.addEventListener('keydown', (e) => e.key === 'Escape' && close());
   addEventListener('scroll', close, { passive: true });
@@ -372,7 +373,8 @@ async function renderSavedList() {
     const res = await fetch(`/api/cities?ids=${list.map((c) => encodeURIComponent(c.id)).join(',')}&lang=${encodeURIComponent(data.lang)}`);
     if (!res.ok) return;
     const { items } = (await res.json()) as { items: Card[] };
-    draw(list.map((c) => ({ ...c, ...items.find((i) => i.id === c.id), name: c.name })));
+    // 名字用接口返回的（当前页面语言），接口没给时才用保存时的名字
+    draw(list.map((c) => ({ ...c, ...items.find((i) => i.id === c.id) })));
   } catch {
     // 保持本地信息
   }

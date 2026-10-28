@@ -158,6 +158,8 @@ describe('city page', () => {
       ['/wmi/he/w/102643743?session=1', '/wmi/en/w/102643743?session=1'],
       ['/mi/iw/w/102643743/hourly', '/mi/en/w/102643743/hourly'],
       ['/wme/he/cities', '/wme/en/cities'],
+      ['/wmi/he', '/wmi/'],
+      ['/wmi/he/?x=1', '/wmi/?x=1'],
     ] as const) {
       const res = await app().request(req(from));
       expect(res.status, from).toBe(301);

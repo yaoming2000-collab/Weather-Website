@@ -67,8 +67,11 @@ export function createApp(
     const lang = c.req.param('lang');
     if (lang && DROPPED_LANGS.has(lang)) {
       const url = new URL(c.req.url);
-      url.pathname = url.pathname.replace(`/${lang}/`, '/en/');
-      return c.redirect(url.pathname + url.search, 301);
+      // /wmi/he/w/1 → /wmi/en/w/1；/wmi/he 或 /wmi/he/ 后面没有页面时回到渠道首页（按定位跳到城市）
+      const rest = url.pathname.replace(/^\/[^/]+\/[^/]+/, '');
+      const channel = c.req.param('channel');
+      const target = rest && rest !== '/' ? `/${channel}/en${rest}` : `/${channel}/`;
+      return c.redirect(target + url.search, 301);
     }
     await next();
   });
@@ -101,9 +104,15 @@ export function createApp(
     }
     try {
       let items = await c.var.weather.search(q, lang);
-      // Foreca 不支持的语言：搜索结果是英文名，用 Wikidata 换成本地名字
-      if (c.var.weather.needsWikidataNames(lang)) items = await c.var.weather.localizeWithin(items, lang, NAME_BUDGET_MS, (p) => waitUntil(c, p));
-      c.header('Cache-Control', 'public, max-age=3600');
+      let complete = true;
+      // Foreca 不支持的语言：搜索结果是英文名，用 Wikidata 换成本地名字（保留英文的州/省，同名城市分得清）
+      if (c.var.weather.needsWikidataNames(lang)) {
+        const r = await c.var.weather.localizeWithin(items, lang, NAME_BUDGET_MS, (p) => waitUntil(c, p), { keepAdmin: true });
+        items = r.locs;
+        complete = r.complete;
+      }
+      // 城市名还没查好时只缓存 1 分钟，下次就是本地名字
+      c.header('Cache-Control', `public, max-age=${complete ? 3600 : 60}`);
       return c.json({ items: items.map((l) => ({ id: l.id, name: l.name, admin: l.adminArea, country: l.country })) });
     } catch {
       return c.json({ error: 'unavailable' }, 503);
@@ -380,11 +389,12 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
     // 城市名本地化和取天气数据同时进行（地点信息几乎总在缓存里）
     const defer = (p: Promise<unknown>) => waitUntil(c, p);
     const base = await c.var.weather.location(id);
-    const [raw, [location = base]] = await Promise.all([
+    const [raw, named] = await Promise.all([
       c.var.weather.cityBundle(id, defer),
       c.var.weather.localizeWithin([base], lang, NAME_BUDGET_MS, defer),
     ]);
-    const bundle = { ...raw, location };
+    // 城市名还没查好（用了英文）时，和缺数据一样只缓存 1 分钟
+    const bundle = { ...raw, location: named.locs[0] ?? base, missing: named.complete ? raw.missing : [...raw.missing, 'names'] };
     const now = c.var.weather.nowMs();
     const features = cityFeatures(bundle, now);
     // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
@@ -451,7 +461,7 @@ async function localizeRanking(c: C, ranking: Ranking, lang: Lang): Promise<Rank
   const rows = [...ranking.warmest, ...ranking.coldest];
   const fake = rows.map((r) => ({ id: r.cityId, name: r.name, adminArea: null, country: r.country, timezone: 'UTC', lat: 0, lon: 0 }));
   const named = await c.var.weather.localizeWithin(fake, lang, NAME_BUDGET_MS, (p) => waitUntil(c, p));
-  const byId = new Map(named.map((l) => [l.id, l]));
+  const byId = new Map(named.locs.map((l) => [l.id, l]));
   const fix = (r: AnomalyRecord) => ({ ...r, name: byId.get(r.cityId)?.name ?? r.name, country: byId.get(r.cityId)?.country ?? r.country });
   return { ...ranking, warmest: ranking.warmest.map(fix), coldest: ranking.coldest.map(fix) };
 }
