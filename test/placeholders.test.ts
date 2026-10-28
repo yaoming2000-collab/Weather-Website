@@ -20,3 +20,18 @@ describe('placeholders for missing data', () => {
     expect(life[0]).toMatchObject({ rating: null, summaryKey: '' });
   });
 });
+
+describe('placeholder hours in odd time zones', () => {
+  it('starts on the local hour in half-hour time zones', async () => {
+    const { placeholderHours } = await import('../src/pages/placeholders');
+    const hours = placeholderHours(Date.UTC(2026, 9, 28, 6, 40), 'Asia/Kolkata', 2);
+    expect(hours.map((h) => h.time.slice(11, 16))).toEqual(['12:00', '13:00']);
+  });
+
+  it('covers a whole local day', async () => {
+    const { placeholderDayHours } = await import('../src/pages/placeholders');
+    const hours = placeholderDayHours('2026-10-30', 'America/New_York');
+    expect(hours).toHaveLength(24);
+    expect(hours[0]!.time.slice(0, 16)).toBe('2026-10-30T00:00');
+  });
+});

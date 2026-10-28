@@ -23,12 +23,12 @@ var b=document.querySelectorAll('[data-units-toggle]');for(var k=0;k<b.length;k+
  * 规则和 client/main.ts 的 applyTime 一致；app.js 之后会再处理一遍（结果相同）。
  */
 export const EARLY_TIME_SCRIPT = `(function(){try{var now=Date.now();
-function run(list){var l0=list[0].querySelector('[data-hour-label]'),label=l0?l0.textContent:'',past=0;for(var i=0;i<list.length;i++){var t=Date.parse(list[i].getAttribute('data-time')||'');if(isNaN(t)||t+36e5>now)break;past++}
-if(!past)return null;for(var j=0;j<past;j++)list[j].hidden=true;var cur=list[past];
-if(cur&&Date.parse(cur.getAttribute('data-time')||'')<=now){cur.setAttribute('data-now','');var el=cur.querySelector('[data-hour-label]');if(el&&label)el.textContent=label}
-if(label){var f=list[0].querySelector('[data-hour-label]');if(f)f.textContent=f.getAttribute('data-hour-label')}
-return cur?(cur.getAttribute('data-time')||'').slice(0,16):null}
+function run(list){var box=list[0].closest('[data-now-label]'),label=box?box.getAttribute('data-now-label'):'',past=0;
+for(var i=0;i<list.length;i++){var t=Date.parse(list[i].getAttribute('data-time')||'');if(isNaN(t)||t+36e5>now)break;past++}
+for(var j=0;j<list.length;j++){if(j<past)list[j].hidden=true;var isNow=j===past&&Date.parse(list[j].getAttribute('data-time')||'')<=now;
+if(isNow)list[j].setAttribute('data-now','');else list[j].removeAttribute('data-now');
+var el=list[j].querySelector('[data-hour-label]');if(el&&j<=past)el.textContent=isNow&&label?label:el.getAttribute('data-hour-label')}
+var cur=list[past];return cur?(cur.getAttribute('data-time')||'').slice(0,16):null}
 var strips=document.querySelectorAll('.hours');for(var k=0;k<strips.length;k++){var hs=strips[k].querySelectorAll('.hour:not(.sunev)');if(!hs.length)continue;
-var first=run(hs);
-if(first){var ev=strips[k].querySelectorAll('.hour.sunev');for(var m=0;m<ev.length;m++)if((ev[m].getAttribute('data-time')||'')<first)ev[m].hidden=true}}
+var first=run(hs);if(first){var ev=strips[k].querySelectorAll('.hour.sunev');for(var m=0;m<ev.length;m++)if((ev[m].getAttribute('data-time')||'')<first)ev[m].hidden=true}}
 var rows=document.querySelectorAll('.row[data-time]');if(rows.length)run(rows)}catch(e){}})()`;

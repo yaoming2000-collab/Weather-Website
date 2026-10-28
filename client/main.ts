@@ -632,20 +632,37 @@ function setupOffline() {
 /** 出错页：重试按钮；页面打开 10 秒后自动重试一次（用 #retried 记住，不会一直刷新） */
 function setupRetry() {
   const btn = document.querySelector<HTMLButtonElement>('[data-retry]');
-  if (!btn) return;
+  if (!btn) {
+    // 自动重试成功后去掉网址里的 #retried
+    if (location.hash === '#retried') history.replaceState(history.state, '', location.pathname + location.search);
+    return;
+  }
   btn.addEventListener('click', () => location.reload());
   if (location.hash !== '#retried') {
     setTimeout(() => {
       if (navigator.onLine === false) return;
-      location.hash = 'retried';
+      // replaceState 不新增历史记录，返回键不会被困在出错页
+      history.replaceState(history.state, '', '#retried');
       location.reload();
     }, 10_000);
   }
 }
 
-/** Service Worker：没有网络时打开最近看过的城市页（见 public/sw.js）；页面加载完再注册，不影响首屏 */
+/**
+ * Service Worker：没有网络时打开最近看过的城市页（见 public/sw.js）；页面加载完再注册，不影响首屏。
+ * 紧急关闭：改成 false 并部署，已经安装的会在用户下次打开页面时注销。
+ */
+const SERVICE_WORKER_ENABLED = true;
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
+  if (!SERVICE_WORKER_ENABLED) {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((rs) => rs.forEach((r) => void r.unregister()))
+      .catch(() => undefined);
+    return;
+  }
   const go = () => navigator.serviceWorker.register('/sw.js').catch(() => undefined);
   if (document.readyState === 'complete') go();
   else addEventListener('load', go, { once: true });

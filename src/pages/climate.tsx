@@ -118,12 +118,12 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
         />
       ))}
       {[...extremes].map((i) => (
-        <text x={x(i).toFixed(1)} y={(y(pts[i]!.maxTemp!) - 8).toFixed(1)} text-anchor="middle" font-size="12.5" font-weight="600" fill="#fff">
+        <text x={x(i).toFixed(1)} y={(y(pts[i]!.maxTemp!) - 8).toFixed(1)} text-anchor="middle" font-size="13" font-weight="600" fill="#fff">
           <tspan data-c={String(pts[i]!.maxTemp)}>{Math.round(pts[i]!.maxTemp!)}</tspan>°
         </text>
       ))}
       {pts.map((s, i) => (
-        <text x={x(i).toFixed(1)} y="145" text-anchor="middle" font-size="12.5" fill="rgba(255,255,255,.65)">
+        <text x={x(i).toFixed(1)} y="145" text-anchor="middle" font-size="13" fill="rgba(255,255,255,.65)">
           {wd(s.date)}
         </text>
       ))}

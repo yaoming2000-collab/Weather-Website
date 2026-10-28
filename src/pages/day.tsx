@@ -8,6 +8,7 @@ import { conditionKey, tempRange, uvLevelKey, windDirText } from '../weather/der
 import type { DailyPoint } from '../weather/types';
 import { AdSlot, DASH, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
 import { G } from './glyphs';
+import { placeholderDayHours } from './placeholders';
 import { cityPageData, Compass, DayRow, Delta, devNote, HourlyStrip, Jump, pageSky, rich, type PageProps } from './home';
 
 /** 日期："10月27日 星期二"之类，按语言格式化 */
@@ -57,7 +58,9 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
   const sub = p.offset === 1 ? 'tomorrow' : 'day-after';
   const title = p.offset === 1 ? t(lang, 'TomorrowLabel') : weekdayLabel(d?.date ?? bundle.today, intlLocale(lang), 'long');
   const point = features.series[p.offset];
-  const hours = (bundle.hourly?.data ?? []).filter((h) => d && h.time.startsWith(d.date));
+  const realHours = (bundle.hourly?.data ?? []).filter((h) => d && h.time.startsWith(d.date));
+  // 逐小时预报覆盖不到这一天时用占位小时，区块不消失
+  const hours = realHours.length > 0 || !d ? realHours : placeholderDayHours(d.date, loc.timezone);
   const uvKey = d ? uvLevelKey(d.uvIndex) : null;
 
   return (

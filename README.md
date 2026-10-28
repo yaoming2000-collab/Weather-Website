@@ -171,12 +171,8 @@ npx wrangler deploy
 | 断网 / 服务器 5xx | Service Worker（`public/sw.js`）显示该城市上次看过的页面，底部提示"当前没有网络" |
 | 浏览器不能保存设置（隐私模式等） | 收藏或改单位时提示一次 |
 
-**Service Worker 紧急关闭**：把 `public/sw.js` 换成下面两行再部署，用户下次打开页面时就会注销：
-
-```js
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', () => self.registration.unregister());
-```
+**Service Worker 紧急关闭**：把 `client/main.ts` 里的 `SERVICE_WORKER_ENABLED` 改成 `false` 再部署，
+已经安装的会在用户下次打开页面时注销。副本只在 12 小时内有效，超过就不用。
 
 ## 天气图标
 
@@ -205,7 +201,7 @@ self.addEventListener('activate', () => self.registration.unregister());
 - `climate_share`（往年对比分享）：参数 `city_id`、`method`（`shared` / `downloaded`）
 
 - `web_vitals`（Core Web Vitals 真实用户数据，`client/vitals.ts`）：参数 `metric_name`（LCP / INP / CLS / FCP / TTFB）、
-  `metric_value`（毫秒；CLS 乘以 1000）、`metric_rating`（good / needs-improvement / poor）、`metric_target`（相关元素）、`page_type`
+  `metric_value`（毫秒；CLS 乘以 1000）、`metric_rating`（good / needs-improvement / poor）、`page_type`
 
 页面上有 `gtag` 时直接发送；没有时写入 `window.dataLayer`。
 GA4 里要按指标看分布，需要在"自定义定义"里把 `metric_name`、`metric_rating`、`page_type` 注册为维度，`metric_value` 注册为指标。

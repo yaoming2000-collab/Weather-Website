@@ -392,6 +392,23 @@ describe('step 3 pages', () => {
     expect(life).not.toContain('class="good"');
   });
 
+  it('does not claim "no rain" when rain is likely but the 15-minute data is not available', async () => {
+    const base = new MockProvider(() => NOW);
+    const noNowcast: WeatherProvider = new Proxy(base, {
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver);
+        if (prop === 'nowcast') return () => Promise.reject(new ProviderError('not in plan', 403));
+        if (prop === 'hourly')
+          return async (id: string, hours: number) => (await base.hourly(id, hours)).map((h) => ({ ...h, precipProb: 90 }));
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const home = await (await app(noNowcast).request(req('/wmi/en/w/102643743'))).text();
+    expect(home).toContain('data-nowcast="unavailable"');
+    expect(home.match(/class="hour" /g)?.length).toBeGreaterThanOrEqual(24);
+    expect(home).not.toContain('class="ico-ph');
+  });
+
   it('error pages offer a retry and keep channel, language and session', async () => {
     const down: WeatherProvider = new Proxy(new MockProvider(() => NOW), {
       get(target, prop, receiver) {
@@ -402,6 +419,9 @@ describe('step 3 pages', () => {
     const html = await (await app(down).request(req('/wxiaomi/de/w/102643743?session=abc&foo=1'))).text();
     expect(html).toContain('data-retry');
     expect(html).toContain('href="/wxiaomi/?session=abc&amp;lang=de"');
+    // 路径里的语言优先于 locale 提示
+    const withLocale = await (await app(down).request(req('/wmi/de/w/102643743?locale=fr-FR'))).text();
+    expect(withLocale).toContain('href="/wmi/?lang=de"');
     const notFound = await (await app().request(req('/wme/fr/w/999999'))).text();
     expect(notFound).not.toContain('data-retry');
     expect(notFound).toContain('href="/wme/?lang=fr"');

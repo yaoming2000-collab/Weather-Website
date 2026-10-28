@@ -1,6 +1,6 @@
 import type { CityFeatures } from '../features';
 import { LIFE_INDEX_KEYS, type LifeIndex } from '../features/life';
-import { toLocalIso } from '../time/cityTime';
+import { offsetMinutes, toLocalIso } from '../time/cityTime';
 import type { CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
 
@@ -27,8 +27,18 @@ function dayPlaceholder(date: string): DailyPoint {
 
 /** 从现在这一小时开始的 n 个占位小时（城市当地时间） */
 export function placeholderHours(nowMs: number, timezone: string, n = PLACEHOLDER_HOURS): HourlyPoint[] {
-  const start = Math.floor(nowMs / 3600_000) * 3600_000;
+  // 按城市当地时间取整点（印度、尼泊尔等半点、45 分时区不能按 UTC 整点算）
+  const minute = Math.floor(nowMs / 60_000) * 60_000;
+  const start = minute - Number(toLocalIso(minute, timezone).slice(14, 16)) * 60_000;
   return Array.from({ length: n }, (_, i) => hourPlaceholder(toLocalIso(start + i * 3600_000, timezone)));
+}
+
+/** 某一天（城市当地日期）0 点开始的 24 个占位小时：逐小时预报覆盖不到那一天时用 */
+export function placeholderDayHours(date: string, timezone: string): HourlyPoint[] {
+  const utcMidnight = Date.parse(`${date}T00:00:00Z`);
+  // 用这一刻的时差近似（夏令时切换当天可能差 1 小时，占位够用）
+  const offsetMin = offsetMinutes(utcMidnight, timezone);
+  return placeholderHours(utcMidnight - offsetMin * 60_000, timezone, 24).filter((h) => h.time.startsWith(date));
 }
 
 /** 从 today（YYYY-MM-DD）开始的 n 个占位日 */

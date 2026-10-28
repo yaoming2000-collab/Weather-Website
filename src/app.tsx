@@ -272,6 +272,8 @@ async function message(c: C, status: 404 | 500 | 503, titleKey: string, textKey:
   // 回首页的链接保留渠道、语言和 session 等参数（首页会按位置跳到城市页）
   const channel = normalizeChannel(c.req.param('channel')) ?? DEFAULT_CHANNEL;
   const params = pickNavParams(query(c));
+  // 网址路径里已经有语言时以它为准（locale 是首次打开时的提示，用户可能已经换了语言）
+  if (isLang(c.req.param('lang'))) params.delete('locale');
   if (!params.has('locale')) params.set('lang', lang);
   const homeHref = `/${channel}/?${params.toString()}`;
   const html = await (<MessagePage lang={lang} titleKey={titleKey} textKey={textKey} homeHref={homeHref} retry={status !== 404} />).toString();

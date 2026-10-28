@@ -396,9 +396,9 @@ export function Layout(props: {
         <title>{props.title}</title>
         {props.preloadIcon ? (
           <link
+            // 不写 href：不支持 imagesrcset 的浏览器就不预加载，免得先下 PNG 再下 WebP
             rel="preload"
             as="image"
-            href={`/img/weather/${iconImage(props.preloadIcon.icon)}`}
             imagesrcset={iconSrcset(props.preloadIcon.icon)}
             imagesizes={`${props.preloadIcon.size}px`}
             fetchpriority="high"

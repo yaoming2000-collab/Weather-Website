@@ -22,7 +22,7 @@ import {
   visibilityKey,
   windDirText,
 } from '../weather/derive';
-import type { CityBundle } from '../weather/service';
+import { shouldFetchNowcast, type CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
 import { AdSlot, DASH, Distance, EarlyTime, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
 import { G } from './glyphs';
@@ -119,7 +119,7 @@ export function DayRow(props: { d: DailyPoint; lang: Lang; range: { min: number;
       </span>
       <span class="bar">
         {known ? <i style={`inset-inline-start:${left.toFixed(1)}%;width:${width.toFixed(1)}%;background:${tempGradient(lo, hi)}`} /> : null}
-        {nowPos !== null ? <b data-now-dot style={`inset-inline-start:${nowPos.toFixed(1)}%`} /> : null}
+        {nowPos !== null && known ? <b data-now-dot style={`inset-inline-start:${nowPos.toFixed(1)}%`} /> : null}
       </span>
       <span class="hi">
         <Temp c={d.maxTemp} />
@@ -158,10 +158,10 @@ export function HourlyStrip(props: { hours: HourlyPoint[]; days: DailyPoint[]; l
   // 第一格只有在已经开始（包含现在）时才叫"现在"；明天、后天页面的第一格是 00:00
   const isNow = (time: string, i: number) => i === 0 && Date.parse(time) <= props.nowMs;
   return (
-    <div class="hours">
+    <div class="hours" data-now-label={t(lang, 'NowLabel')}>
       {hourItems(props.hours, props.days).map((it, i) =>
         it.kind === 'hour' ? (
-          <div class="hour" data-time={it.h.time}>
+          <div class="hour" data-time={it.h.time} data-now={isNow(it.h.time, i) ? '' : undefined}>
             <div class="t" data-hour-label={hourLabel(it.h.time)}>
               {isNow(it.h.time, i) ? t(lang, 'NowLabel') : hourLabel(it.h.time)}
             </div>
@@ -406,9 +406,10 @@ export function HomePage(p: PageProps) {
   // 没有日出日落时间时不画太阳（位置是估的）
   const daylight = sky.phase !== 'night' && today?.sunrise && today?.sunset ? sky.arc : null;
   const heroIcon = displayIcon(c.icon, sky);
-  // 降雨时间轴没有内容时：没去请求（逐小时预报显示近 3 小时不太会下雨）→"未来 2 小时无雨"；
-  // 请求失败、逐小时预报也没有、或取到的数据已全部过时 →"暂无数据"
-  const nowcastFallback = bundle.nowcast === null && !bundle.missing.includes('nowcast') && !isPlaceholder(hourly?.data[0] ?? { icon: '' }) ? 'dry' : 'unavailable';
+  // 降雨时间轴没有内容时：只有"按规则根本不需要请求"（现在没在下、逐小时预报近 3 小时不太会下雨）才显示"未来 2 小时无雨"；
+  // 请求了但失败、套餐不包含、逐小时预报也没有、或取到的数据已全部过时 →"暂无数据"
+  const realHours = hourly && hourly.data[0] && !isPlaceholder(hourly.data[0]) ? hourly.data : null;
+  const nowcastFallback = bundle.nowcast === null && realHours && !shouldFetchNowcast(c, realHours) ? 'dry' : 'unavailable';
   // 数据的实际年龄（接口故障时用的是旧数据）；页面缓存期间由浏览器脚本继续更新这行字
   const updMins = Math.max(0, Math.floor((p.nowMs - current.fetchedAt) / 60_000));
 
