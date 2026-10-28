@@ -300,5 +300,6 @@
   "Cond_sandy": "Heavy dust",
   "UnitsTitle": "Units",
   "TemperatureLabel": "Temperature",
-  "WindSpeedLabel": "Wind speed"
+  "WindSpeedLabel": "Wind speed",
+  "PrecipTodayNote": "Today, {percent} chance of rain"
 }
