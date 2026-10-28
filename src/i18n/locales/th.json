@@ -301,5 +301,5 @@
   "UnitsTitle": "หน่วย",
   "TemperatureLabel": "อุณหภูมิ",
   "WindSpeedLabel": "ความเร็วลม",
-  "PrecipTodayNote": "วันนี้มีโอกาสเกิดฝน {percent}"
+  "PrecipTodayNote": "วันนี้มีโอกาสเกิดฝน {percent}%"
 }

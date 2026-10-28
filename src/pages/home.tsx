@@ -520,7 +520,7 @@ export function HomePage(p: PageProps) {
           </div>
           <div class="note">
             {today?.precipProb !== null && today?.precipProb !== undefined
-              ? t(lang, 'PrecipTodayNote', { percent: `${Math.round(today.precipProb)}%` })
+              ? t(lang, 'PrecipTodayNote', { percent: Math.round(today.precipProb) })
               : t(lang, 'TodayLabel')}
           </div>
         </div>

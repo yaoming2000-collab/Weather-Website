@@ -301,5 +301,5 @@
   "UnitsTitle": "Đơn vị",
   "TemperatureLabel": "Nhiệt độ",
   "WindSpeedLabel": "Tốc độ gió",
-  "PrecipTodayNote": "Hôm nay, khả năng mưa {percent}"
+  "PrecipTodayNote": "Hôm nay, khả năng mưa {percent}%"
 }

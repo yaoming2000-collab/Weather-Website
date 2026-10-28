@@ -301,5 +301,5 @@
   "UnitsTitle": "Einheiten",
   "TemperatureLabel": "Temperatur",
   "WindSpeedLabel": "Windgeschwindigkeit",
-  "PrecipTodayNote": "Heute {percent} Regenwahrscheinlichkeit"
+  "PrecipTodayNote": "Heute {percent}% Regenwahrscheinlichkeit"
 }

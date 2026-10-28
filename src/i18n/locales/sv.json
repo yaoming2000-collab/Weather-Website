@@ -301,5 +301,5 @@
   "UnitsTitle": "Enheter",
   "TemperatureLabel": "Temperatur",
   "WindSpeedLabel": "Vindhastighet",
-  "PrecipTodayNote": "Idag {percent} risk för regn"
+  "PrecipTodayNote": "Idag {percent}% risk för regn"
 }

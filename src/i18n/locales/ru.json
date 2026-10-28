@@ -301,5 +301,5 @@
   "UnitsTitle": "Единицы измерения",
   "TemperatureLabel": "Температура",
   "WindSpeedLabel": "Скорость ветра",
-  "PrecipTodayNote": "Сегодня вероятность дождя {percent}"
+  "PrecipTodayNote": "Сегодня вероятность дождя {percent}%"
 }

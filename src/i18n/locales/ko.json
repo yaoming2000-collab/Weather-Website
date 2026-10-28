@@ -301,5 +301,5 @@
   "UnitsTitle": "단위",
   "TemperatureLabel": "기온",
   "WindSpeedLabel": "풍속",
-  "PrecipTodayNote": "오늘 강수 확률 {percent}"
+  "PrecipTodayNote": "오늘 강수 확률 {percent}%"
 }
