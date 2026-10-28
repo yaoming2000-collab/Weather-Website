@@ -267,7 +267,8 @@ async function message(c: C, status: 404 | 500 | 503, titleKey: string, textKey:
 async function legacyHome(c: C, channel: Channel) {
   const q = query(c);
   // 旧链接直接指定了城市坐标
-  const coords = parseCoords(q.get('lat'), q.get('lon')) ?? visitorCoords(c.req.raw) ?? fallbackCoords();
+  const coords =
+    parseCoords(q.get('lat'), q.get('lon')) ?? visitorCoords(c.req.raw) ?? fallbackCoords(c.req.raw, c.req.header('Accept-Language'));
   return redirectToNearest(c, channel, langOf(c), coords);
 }
 

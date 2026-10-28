@@ -63,6 +63,15 @@ describe('home and redirects', () => {
     expect(res.headers.get('Location')).toBe('/wmi/en/w/102643743');
   });
 
+  it('without coordinates, uses the capital of the visitor country, then the browser language', async () => {
+    // 只知道国家：俄罗斯 → 莫斯科；只有浏览器语言 vi-VN → 河内；只有 "ru" → 莫斯科
+    expect((await app().request(req('/', { cf: { country: 'RU' } }))).headers.get('Location')).toBe('/wmi/en/w/100524901');
+    expect((await app().request(req('/', { headers: { 'Accept-Language': 'vi-VN,vi;q=0.9' } }))).headers.get('Location')).toBe('/wmi/vi/w/101581130');
+    expect((await app().request(req('/', { headers: { 'Accept-Language': 'ru' } }))).headers.get('Location')).toBe('/wmi/ru/w/100524901');
+    // 未知国家代码、英文无地区：伦敦
+    expect((await app().request(req('/', { cf: { country: 'T1' }, headers: { 'Accept-Language': 'en' } }))).headers.get('Location')).toBe('/wmi/en/w/102643743');
+  });
+
   it('redirects the old cities page', async () => {
     const res = await app().request(req('/wsearch-mi/cities?locale=es-MX'));
     expect(res.headers.get('Location')).toBe('/wsearch-mi/lm/cities?locale=es-MX');
