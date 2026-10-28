@@ -404,9 +404,10 @@ export function HomePage(p: PageProps) {
           {t(lang, conditionKey(heroIcon))}
         </p>
         <p class="hl-line">
-          {t(lang, 'HighShort')} <b><Temp c={today?.maxTemp} /></b>
+          {/* 每组"标签 + 温度"单独隔离，从右往左的语言里标签和数字不会错位 */}
+          <bdi>{t(lang, 'HighShort')} <b><Temp c={today?.maxTemp} /></b></bdi>
           {'  '}
-          {t(lang, 'LowShort')} <b><Temp c={today?.minTemp} /></b>
+          <bdi>{t(lang, 'LowShort')} <b><Temp c={today?.minTemp} /></b></bdi>
         </p>
         {c.feelsLike !== null && c.temperature !== null && Math.round(c.feelsLike) !== Math.round(c.temperature) ? (
           <p class="feels">
