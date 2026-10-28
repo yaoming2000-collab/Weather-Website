@@ -348,7 +348,9 @@ describe('step 3 pages', () => {
     const tag = home.slice(at, home.indexOf('</a>', at));
     // 结果只在 <template> 里，看得见的文字是"猜一猜"
     const visible = tag.replace(/<template>[\s\S]*?<\/template>/, '');
-    expect(visible).not.toMatch(/than (on )?this day last year|than last year/i);
+    // 看得见的部分没有温差数字，也没有结果文案
+    expect(visible).not.toContain('data-dca');
+    expect(visible).toContain('Warmer or colder than last year? Guess');
     expect(tag).toContain('<template>');
   });
 
@@ -523,3 +525,31 @@ describe('page cache', () => {
   });
 });
 
+
+describe('settings and chosen language', () => {
+  it('renders the settings page with every language and the unit switches', async () => {
+    const res = await app().request(req('/wmi/zh/settings'));
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html.match(/data-lang-choice="/g)?.length).toBe(28);
+    expect(html).toMatch(/data-lang-choice="zh"[^>]*aria-current="true"/);
+    expect(html).toContain('data-units-group="temp"');
+    expect(html).toContain('data-units-group="wind"');
+    expect((await app().request(req('/foo/zh/settings'))).status).toBe(404);
+  });
+
+  it('uses the chosen language when coming from outside, over the lock-screen locale', async () => {
+    const a = app();
+    const home = await a.request(req('/wmi/?locale=en-US', { headers: { Cookie: 'wlang=de' }, cf: { latitude: '51.5', longitude: '-0.12' } }));
+    expect(home.headers.get('Location')).toMatch(/^\/wmi\/de\/w\//);
+    const direct = await a.request(req('/wmi/en/w/102643743?session=s', { headers: { Cookie: 'x=1; wlang=de' } }));
+    expect(direct.status).toBe(302);
+    expect(direct.headers.get('Location')).toBe('/wmi/de/w/102643743?session=s');
+    // 站内点进来（同站 Referer）不换语言；设置页不换
+    const inside = await a.request(req('/wmi/en/w/102643743', { headers: { Cookie: 'wlang=de', Referer: 'https://weather.itsfunmag.com/wmi/de/w/1' } }));
+    expect(inside.status).toBe(200);
+    expect((await a.request(req('/wmi/en/settings', { headers: { Cookie: 'wlang=de' } }))).status).toBe(200);
+    // 没选过语言：照旧
+    expect((await a.request(req('/wmi/en/w/102643743'))).status).toBe(200);
+  });
+});

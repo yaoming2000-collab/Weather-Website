@@ -146,6 +146,12 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
   );
 }
 
+/** "去年今天：" 后面接天气；中日文全角冒号后不再加空格 */
+function lastYearLead(lang: Lang): string {
+  const lead = t(lang, 'ClimateLastYearToday');
+  return /[：:]$/.test(lead) && /：$/.test(lead) ? lead : `${lead} `;
+}
+
 /** 今天和去年同一天比 /w/{id}/climate（重点功能） */
 export function ClimatePage(p: PageProps) {
   const { bundle, channel, lang, features } = p;
@@ -197,7 +203,8 @@ export function ClimatePage(p: PageProps) {
             <p class="ly-day">
               {cmp.lastIcon ? <Icon icon={cmp.lastIcon} size={28} alt="" /> : null}
               <span>
-                {t(lang, 'ClimateLastYearToday')} <b>{cmp.lastIcon ? t(lang, conditionKey(cmp.lastIcon)) : DASH}</b>
+                {lastYearLead(lang)}
+                <b>{cmp.lastIcon ? t(lang, conditionKey(cmp.lastIcon)) : DASH}</b>
               </span>
             </p>
             <Thermometer lang={lang} lastMin={cmp.lastMinTemp} lastMax={cmp.lastMaxTemp} min={cmp.minTemp} max={cmp.maxTemp} color={color} />

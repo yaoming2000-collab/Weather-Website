@@ -13,7 +13,8 @@
 | 3b | 新视觉（随时间和天气变化的天空）、明天/后天/7 天页、往年对比页（猜一猜、分享卡片）、排行榜、生活指数页、"预报准吗" | ✅ PR #4 |
 | — | 缓存和数据获取修正、调用统计 | ✅ PR #5、#6 |
 | 4 | 28 种语言文案（去掉希伯来语，新增保加利亚语、罗马尼亚语）、城市名本地化、阿拉伯语排版、温度和风速单位分开设置、定位失败时用所在国首都 | ✅ PR #7 |
-| 4b | 手机端细节：缺数据显示 "--" 不隐藏区块、出错重试和离线兜底、Core Web Vitals、点按区域 ≥ 44px | ✅ 本分支 |
+| 4b | 手机端细节：缺数据显示 "--" 不隐藏区块、出错重试和离线兜底、Core Web Vitals、点按区域 ≥ 44px | ✅ PR #8 |
+| 4c | 往年对比改为和去年同一天比（OpenWeather）、连续猜对天数、设置页（语言、单位）、县区名搜索、首页不提前揭晓答案、iPhone 逐小时滑动 | ✅ 本分支 |
 | 5 | 广告：Darren 自己接入代码，新站只保留广告位占位（`data-slot`） | — |
 | 6 | 部署说明、验收 | 待开始 |
 
@@ -40,7 +41,8 @@ npm run typecheck                # 类型检查
 | `/{渠道}/{语言}/w/geo/{纬度},{经度}` | 自有产品按坐标跳转 |
 | `/{渠道}/{语言}/w/{城市ID}/hourly`、`/15day`、`/air` | 逐小时、15 天、空气质量子页 |
 | `/{渠道}/{语言}/w/{城市ID}/tomorrow`、`/day-after`、`/week` | 明天、后天、7 天总览 |
-| `/{渠道}/{语言}/w/{城市ID}/climate` | 今天和往年比（猜一猜、温度计图、15 天对比、降水对比、分享卡片） |
+| `/{渠道}/{语言}/w/{城市ID}/climate` | 今天和去年同一天比（猜一猜、连续猜对天数、温度计图、15 天对比、降水对比、分享卡片） |
+| `/{渠道}/{语言}/settings` | 设置：语言、温度单位、风速单位 |
 | `/{渠道}/{语言}/w/{城市ID}/life/{running\|laundry\|carwash\|clothing\|sunscreen}` | 生活指数详情 |
 | `/{渠道}/{语言}/ranking` | 今天全球最反常的城市 |
 | `/{渠道}/{语言}/cities` | 我的城市和城市搜索 |
@@ -80,7 +82,7 @@ src/
     home.tsx day.tsx climate.tsx life.tsx subpages.tsx  各页面
   config/features.ts    第 3 步功能的可调规则：往年对比分级、猜一猜、排行榜、降雨时间轴、生活指数阈值
   features/
-    climate.ts          今天比往年热还是冷：偏差、分级、用词、15 天对比、降水对比、首页标签
+    climate.ts          今天比去年同一天热还是冷：偏差、分级、用词、15 天对比、降水对比、首页标签
     nowcast.ts          降雨时间轴的结论（有雷达精确到分钟，无雷达只说小时）
     life.ts             生活指数：跑步、晾衣、洗车、穿衣、防晒
     store.ts            猜一猜计数和排行榜存储（D1；没有 D1 时用内存）
@@ -136,8 +138,9 @@ npx wrangler d1 execute weather-features --remote --command "SELECT date, COUNT(
 ```bash
 npx wrangler kv namespace create WEATHER_KV                     # 把输出的 id 填进 wrangler.toml
 npx wrangler d1 create weather-features                         # 把输出的 database_id 填进 wrangler.toml
-npx wrangler d1 migrations apply weather-features --remote      # 建表（migrations/ 下的全部文件，含 PR #6 新增的 0002、0003）
+npx wrangler d1 migrations apply weather-features --remote      # 建表（migrations/ 下的全部文件，含 0002–0004）
 npx wrangler secret put FORECA_TOKEN
+npx wrangler secret put OWM_KEY        # OpenWeather One Call API（去年同一天的天气）
 npx wrangler deploy
 ```
 
@@ -157,6 +160,16 @@ npx wrangler deploy
 - 地点接口返回的英文国家名写法，用于判断雷达覆盖（`src/config/radar.ts`）
 - 日预报 `dataset=full` 是否包含日出日落等字段
 
+## 和去年同一天比（2026-10-28 起）
+
+- 比的是"今天的预报最高温"和"去年同一天的实际最高温"。去年数据来自 OpenWeather One Call API 4.0 的逐日时间线
+  （`src/weather/history.ts`），一次取 10 天，按 10 天一块永久缓存，同一城市大约每 10 天才请求一次；不再请求 Foreca 的 30 年平均。
+- 没配置 `OWM_KEY` 时不报错，"和去年比"显示 "--"。
+- 每个城市每天第一次算出的结果存进 D1 的 `daily_comparisons`（迁移 0004），之后所有人都按它判断猜对没有，答案不会中途变。
+- 首页标签猜之前只显示"猜一猜"，猜过后显示结果；往年对比页的 15 天对比图里"今天"的点猜完才显示。
+- 连续猜对天数存在浏览器（`client/lib/streak.ts`），按城市算：猜错或漏一天断，没出题的日子不算断。
+- OpenWeather 的调用也记在调用统计里（kind 为 `owm-ly`）。
+
 ## 缺数据和出错时的表现
 
 原则（Darren 2026-10-28）：区块一律保留，没有的数值显示 `--`（不显示 0），页面高度不因数据有无而变化。
@@ -165,7 +178,7 @@ npx wrangler deploy
 | --- | --- |
 | 逐小时 / 每日预报没取到 | 用占位数据（`src/pages/placeholders.ts`）：图标位留空，数值 `--`；页面只缓存 60 秒 |
 | 降雨时间轴 | 一直显示：没去请求时"未来 2 小时无雨"，取不到时"暂无数据" |
-| 往年数据 | 首页标签显示"今天 vs 往年 --"；往年对比页区分"暂时取不到，请稍后再试"和"该城市没有长期数据"，图表和降雨对比保留位置 |
+| 去年数据 | 首页标签显示"今天 vs 去年 --"；往年对比页区分"暂时取不到，请稍后再试"和"没有去年同一天的数据"，图表和降雨对比保留位置 |
 | 当前天气取不到（整页 503） | 出错页：重试按钮，10 秒后自动重试一次；回首页保留渠道、语言、session |
 | 数据是旧的（接口故障时用了 6 小时内的旧数据） | "N 小时前更新"，超过 1 小时显示黄色 |
 | 断网 / 服务器 5xx | Service Worker（`public/sw.js`）显示该城市上次看过的页面，底部提示"当前没有网络" |
