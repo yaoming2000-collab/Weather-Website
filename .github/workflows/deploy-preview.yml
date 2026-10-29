@@ -14,7 +14,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: preview
+  # 部署共用一个组（新的推送取消旧的部署）；PR 的测试按 PR 分组，互不取消
+  group: ${{ github.event_name == 'push' && 'preview-deploy' || format('test-{0}', github.ref) }}
   cancel-in-progress: true
 
 jobs:

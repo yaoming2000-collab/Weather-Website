@@ -14,7 +14,10 @@ npm run build:client   # 打包浏览器脚本到 public/static/app.js（dev 和
 npm run dev            # 本地运行 http://127.0.0.1:8787/（先 cp .dev.vars.example .dev.vars）
 ```
 
-- 不要执行 `wrangler deploy`、`wrangler secret`、`wrangler d1 ... --remote`。部署由人来做，命令写进 PR 说明里。
+- 不要执行会改线上环境的命令：`wrangler deploy`、`npm run deploy`、`wrangler secret …`、`wrangler login`、
+  `wrangler kv namespace create`、`wrangler kv … --remote`、`wrangler d1 create`、`wrangler d1 … --remote`。
+  部署由人来做，命令写进 PR 说明里。
+- 分支名**不要用 `step-` 开头**（例如用 `codex/…`）：推送 `step-*` 分支在配置了 Cloudflare 密钥后会自动部署测试环境。
 - 测试都是离线的。需要真实数据的问题，请在 PR 说明里写明，交给人来验证。
 
 ## 目录结构
@@ -28,7 +31,8 @@ src/weather/            天气数据：service.ts（缓存、并发合并、出�
                         wikidata.ts（城市名、县区搜索）、mock.ts（模拟数据）、icons.ts（天气代码 → 图标）
 src/features/           往年对比（climate.ts）、生活指数、降雨时间轴、D1 存储（store.ts）、调用统计（usage.ts）
 src/cache/store.ts      两层缓存：Cache API（本机房）+ KV（全球）
-src/config/             可调参数：thresholds.ts（缓存时长、超时）、features.ts（分级、猜一猜、排行榜）、渠道、单位
+src/config/             可调参数：thresholds.ts（缓存时长、页面缓存、非必需数据的等待时间）、features.ts（分级、猜一猜、排行榜）、渠道、单位
+                        （OpenWeather 超时在 src/weather/history.ts，定时任务的批量和并发在 src/weather/service.ts HISTORY_DRAIN，运行时长在 src/index.ts）
 src/pages/              页面 JSX；styles.ts 是全站 CSS（模板字符串，内联进页面）；glyphs.tsx 是 SVG 图标
 src/i18n/locales/*.json 28 种语言文案（en.json 是基准）
 client/                 浏览器脚本（原生 TS，无框架）；client/lib/ 是可单测的纯函数
@@ -44,7 +48,7 @@ test/                   Vitest 测试
   - 服务端渲染里不能出现因人而异的内容，比如收藏、猜过的答案、单位、上次的城市、语言 Cookie 的结果等。
   - 这些都在浏览器里处理：用 localStorage、Cookie、`data-*` 属性和 `#page-data` JSON。
 - **页面不能跳动（CLS = 0）**：
-  - 首次绘制前就要确定的显示，用紧跟元素的小段内联脚本完成，参考 `GUESS_TAG_SCRIPT`、`STREAK_PRE_SCRIPT`、`EARLY_UNITS_SCRIPT`。
+  - 首次绘制前就要确定的显示，用紧跟元素的小段内联脚本完成，参考 `GUESS_TAG_SCRIPT`（src/pages/home.tsx）、`STREAK_PRE_SCRIPT()`（src/pages/climate.tsx）、`EARLY_UNITS_SCRIPT`（src/config/units.ts）。
   - 不要等 `client/main.ts` 加载后再插入会改变高度的内容。
 - **缺数据时**：区块照常显示、数值用 `--`（`DASH`），不隐藏、不显示 0。临时缺数据要推进 `bundle.missing`，页面只缓存 60 秒。
 - 点按区域至少 44px；改界面后要在 360px 和 375px 宽、长城市名、阿拉伯语（从右到左）下检查。

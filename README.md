@@ -137,18 +137,10 @@ npx wrangler d1 execute weather-features --remote --command "SELECT date, COUNT(
 月费估算：把最近 7 天的日均计费调用 × 30，超过 1,000 万的部分每千次 0.09 €。
 测试环境没有 D1，不统计。
 
-## 部署（第 6 步会补充完整说明）
+## 部署
 
-```bash
-npx wrangler kv namespace create WEATHER_KV                     # 把输出的 id 填进 wrangler.toml
-npx wrangler d1 create weather-features                         # 把输出的 database_id 填进 wrangler.toml
-npx wrangler d1 migrations apply weather-features --remote      # 建表（migrations/ 下的全部文件，含 0002–0004）
-npx wrangler secret put FORECA_TOKEN
-npx wrangler secret put OWM_KEY        # OpenWeather One Call API（去年同一天的天气）
-npx wrangler deploy
-```
-
-测试环境（`--env preview`）需要一个 KV（去年数据由定时任务存进 KV），不需要 D1，见 `docs/deploy-preview.md`。
+KV、D1 已经建好，id 已写在 `wrangler.toml`，**不要再执行 `kv namespace create` / `d1 create`**（会建出新的一套、覆盖现有 id）。
+部署命令、密钥和正式上线前的待办见 [`docs/HANDOVER.md`](docs/HANDOVER.md) 第 5、6 节。
 
 ## 第 3 步的存储为什么用 D1
 

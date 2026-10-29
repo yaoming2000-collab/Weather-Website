@@ -2,7 +2,7 @@
 
 > 写于 2026-10-29，交给接手的前端、后端工程师。
 > 产品负责人：Darren。之前的开发方式：Darren 提需求和验收，Claude 写代码、开 PR，开发同事负责部署。
-> 这份文档讲"现在是什么状态、为什么这样做、接下来做什么"；具体规则以代码和 `README.md` 为准。
+> 这份文档讲"现在是什么状态、为什么这样做、接下来做什么"。业务规则以代码为准，`README.md` 里有各项设计的详细说明；**部署和配置以本文为准**。
 > 给 Codex 的工作说明在仓库根目录的 `AGENTS.md`。
 
 ---
@@ -43,6 +43,12 @@ npm run check                     # 类型检查 + 测试（提交前必须通�
 ```
 
 本地用真实数据：`.dev.vars` 里设 `WEATHER_PROVIDER=foreca`、`FORECA_TOKEN=…`、`OWM_KEY=…`（`.dev.vars` 不进仓库）。
+去年数据只由定时任务取回，`wrangler dev` 不会自动跑定时任务，本地"和去年比"会一直显示"正在准备"。要手动触发：
+
+```bash
+npx wrangler dev --test-scheduled
+curl "http://127.0.0.1:8787/__scheduled?cron=*/10+*+*+*+*"    # 等 1 分钟左右（OpenWeather 一次 40 多秒）
+```
 
 ---
 
@@ -65,15 +71,17 @@ npm run check                     # 类型检查 + 测试（提交前必须通�
 详细说明见 `README.md` 对应章节。
 
 1. **整页 CDN 缓存，不按人区分**
-   - 城市页 HTML 在每个机房缓存 5 分钟（缺数据时 60 秒），按部署版本区分，不同渠道共用一份（渠道先写成占位符 `__ch__`，返回前替换）。
+   - 城市页 HTML 在每个机房缓存：5 分钟内算新鲜（缺数据时 60 秒），过期后 30 分钟内先给访客旧页面、后台重新生成（`PAGE_STALE_WHILE_REVALIDATE`）。
+   - 缓存按部署版本区分，不同渠道共用一份（渠道先写成占位符 `__ch__`，返回前替换）。
    - 所以**服务端渲染的 HTML 里不能有任何因人而异的内容**（已收藏、已猜过、单位、上次的城市……）。这些都由浏览器脚本根据 localStorage / Cookie 处理。
 2. **两层数据缓存，尽量少调 Foreca**（按次计费）：本机房 Cache API → 全球 KV；过期后各机房错开刷新；失败时用旧数据；不存在的城市记 1 天。
 3. **"和去年同一天比"**（2026-10-28 起，替代 Foreca 的 30 年平均）
-   - 比"今天预报最高温"和"去年同一天实际最高温"，±2° 内算"差不多"。
+   - 比"今天预报最高温"和"去年同一天实际最高温"。差值四舍五入到 0.1°，绝对值**小于** 2° 算"差不多"，正好 2.0° 算更热或更冷（`src/config/features.ts`）。
    - 每个城市每天第一次算出的结果存进 D1（`daily_comparisons`），之后都按它判断猜对没有，答案不会中途变。
 4. **去年数据由定时任务预取**
    - OpenWeather One Call 4.0 一次要 46–49 秒，页面等不起，`waitUntil` 约 30 秒就被取消。
-   - 所以页面只读缓存，缺的 10 天块放进 KV 队列（`q:ly:<城市>:<日期>`），每 10 分钟的定时任务取回（同时 4 个、单次 90 秒超时、8 分钟后不再开始新的）。
+   - 所以页面只读缓存，缺的 10 天块放进 KV 队列（键 `q:ly:<Foreca 城市 ID>:<块的第一天 YYYY-MM-DD>`）。
+   - 每 10 分钟的定时任务取回：每轮最多 60 块、同时 4 个、单次 90 秒超时、8 分钟后不再开始新的。并发 4 是因为 Workers 同时只能开 6 个连接。
    - 等待期间页面显示"正在准备"、今天不出题、连续猜对不算断。新城市第一次打开后约 10 分钟出题。
 5. **不泄漏答案**（2026-10-29）
    - 往年对比页的图和降雨只比**过去 7 天**（今年实际 vs 去年同一天，到昨天）。
@@ -118,7 +126,10 @@ npm run check                     # 类型检查 + 测试（提交前必须通�
 | `OWM_KEY` | OpenWeather One Call API 4.0（去年数据） | 已设置 | **待设置** |
 
 - **OpenWeather 的 key 已经多次出现在聊天记录和附件里，正式上线后必须重新生成。**
-- GitHub Actions 没有配置 Cloudflare 密钥，所以只跑测试、不自动部署（见 `.github/workflows/deploy-preview.yml`）。
+- GitHub Actions（`.github/workflows/deploy-preview.yml`）：
+  - 合到 main 的 PR 和推送 `step-*` 分支时跑类型检查和测试。
+  - 现在 GitHub 里没有配置 Cloudflare 密钥，所以不会自动部署。
+  - **注意**：一旦在 GitHub 仓库里加上 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`，以后每次推送 `step-*` 分支都会自动部署到测试环境。
 
 ### 部署命令
 
@@ -132,8 +143,9 @@ npx wrangler d1 migrations apply weather-features --remote   # 每次有新的 m
 npx wrangler deploy                         # 输出里应是 weather-itsfunmag
 ```
 
-- 在中国大陆网络下 `wrangler tail` 连不上（workers.dev 解析被干扰），看日志请用 Cloudflare 控制台的 Observability。
-- 定时任务的日志是 `[history] prefetch {"fetched":…}`。
+- 在中国大陆网络下 `wrangler tail` 连不上（workers.dev 解析被干扰），看日志请用 Cloudflare 控制台的 Observability（目前只有测试环境开了）。
+- 定时任务有事可做时会记一行 `[history] prefetch {"fetched":…,"dropped":…,"retried":…,"left":…}`；队列是空的时候不记。
+- `docs/deploy-preview.md` 是给开发同事的测试环境部署步骤，以本节为准。
 
 ---
 
@@ -145,7 +157,11 @@ npx wrangler deploy                         # 输出里应是 weather-itsfunmag
    - 现在两个环境共用一个，待取队列也共用，两边的定时任务都会处理它。
 2. **正式 D1 执行迁移**：`npx wrangler d1 migrations apply weather-features --remote`（0001–0004；0004 会清空旧排行榜，正式库目前没有真实数据，没关系）。
 3. **正式环境设置密钥**：`npx wrangler secret put FORECA_TOKEN`、`npx wrangler secret put OWM_KEY`。
-4. **正式环境开启 observability**：在 wrangler.toml 顶层加 `[observability] enabled = true`。
+4. **正式环境开启 observability**：在 wrangler.toml 顶层（`[env.preview]` 之前）加两行：
+   ```toml
+   [observability]
+   enabled = true
+   ```
 5. **重新部署正式 Worker**：之前同事用本地改过的配置部署过一次，D1 绑定名是错的 `weather_features`。
 6. **临时域名 weather-new.itsfunmag.com 上验收**：在 wrangler.toml 顶层加
    ```toml
@@ -155,7 +171,8 @@ npx wrangler deploy                         # 输出里应是 weather-itsfunmag
    ```
    部署后做真机测试（iPhone、Android、小屏 320px），检查广告位、GA4。
 7. **GA4**
-   - 填入衡量 ID。
+   - 代码里没有加载 GA4 的部分。页面上有 `gtag` 时直接发事件，没有时写进 `window.dataLayer`。
+   - 要有人把 GA4（gtag.js）或 GTM 的代码加进页面头部。可以和广告代码一起由 Darren 接入，也可以放在 `src/pages/components.tsx` 的 `Layout` 里。
    - 把 `metric_name`、`metric_rating`、`page_type` 注册为自定义维度，`metric_value` 注册为自定义指标。事件说明见 README"统计事件"。
 8. **Foreca 正式订阅**，换掉试用密钥。
    - Cirrus：449 €/月，含 1,000 万次，超出每千次 0.09 €，每秒上限 50 次，只计成功的请求。
@@ -166,7 +183,7 @@ npx wrangler deploy                         # 输出里应是 weather-itsfunmag
 
 11. Worker 接管 weather.itsfunmag.com：把上面的 `pattern` 换成（或再加一条）`weather.itsfunmag.com`。
     - 用 custom_domain 时，Cloudflare 会要求先去掉现在指向旧服务器的 A 记录，所以要选低峰时段操作。
-    - 回滚办法：删掉这条 route，恢复 A 记录。
+    - 回滚办法：在 Cloudflare 控制台（Worker → Settings → Domains & Routes）移除 weather.itsfunmag.com，恢复原来的 A 记录，再把 wrangler.toml 里的这条 route 删掉。
 12. 旧服务器（A 记录 34.143.194.131）保留 4 周用于回滚。
 13. 4 周后停掉 OpenWeather Professional 订阅。旧站靠它取数据，回滚期间不能停。One Call API 4.0 是单独的订阅，要保留。
 
@@ -174,7 +191,8 @@ npx wrangler deploy                         # 输出里应是 weather-itsfunmag
 
 14. **看调用统计算月费**：Foreca 和 OpenWeather 都按次计费，查询方法见 README"Foreca 调用统计"；OpenWeather 的调用记为 kind `owm-ly`。
     - OpenWeather 每天前 1,000 次免费，超出每次 0.0015 美元。按设计，每个活跃城市每天约 1–1.4 次。
-    - 定时任务每天大约能处理 5,500 次（约 4,000 个活跃城市）。超过这个量需要提高频率或并发。
+    - 定时任务每天大约能处理 5,500 次（约 4,000 个活跃城市；每轮上限 60 块，一天最多 8,640 次）。
+    - 超过这个量时，先调大 `HISTORY_DRAIN.limit` 或提高定时任务频率；并发受 6 个连接的限制，基本不能再加。
 15. **（可选）上线前预热热门城市的去年数据**，减少用户看到"正在准备"。
 16. **（可选）问 OpenWeather**：4.0 为什么一次要 46–49 秒，偶尔还会 504。
 17. **（想法，未定）**：猜完后提示"明天再来猜"，提高回访。
@@ -205,7 +223,7 @@ npx wrangler deploy                         # 输出里应是 weather-itsfunmag
 | --- | --- |
 | `AGENTS.md` | 给 Codex 的工作说明（命令、结构、规则、边界） |
 | `README.md` | 设计说明（缓存、往年对比、多语言、缺数据表现、广告位、统计事件、调用统计查询） |
-| `docs/deploy-preview.md` | 测试环境部署步骤（面向开发同事） |
+| `docs/deploy-preview.md` | 测试环境部署步骤（面向开发同事，和第 5 节一致） |
 | `docs/HANDOVER.md` | 本文 |
 | `scripts/codex-setup.sh` | Codex 云端环境的初始化脚本 |
 | `migrations/` | D1 建表和改表（按编号顺序执行） |
