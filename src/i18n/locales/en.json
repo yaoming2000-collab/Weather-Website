@@ -310,7 +310,7 @@
   "ClimateRainLastYear": "Last year",
   "ClimateRainThisYear": "This year",
   "ClimateRainPast": "Days with rain or snow in these {days} days: {now} this year, {last} last year.",
-  "ClimateTeaser": "Remember the weather on this day last year? Guess",
+  "ClimateTeaser": "Remember this day last year? Guess",
   "StreakCurrent": "{n}-day guessing streak",
   "StreakBest": "best {n} days",
   "StreakBroken": "Streak broken",

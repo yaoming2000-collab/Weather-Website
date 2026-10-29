@@ -351,7 +351,7 @@ describe('step 3 pages', () => {
     const visible = tag.replace(/<template>[\s\S]*?<\/template>/, '');
     // 看得见的部分没有温差数字，也没有结果文案
     expect(visible).not.toContain('data-dca');
-    expect(visible).toContain('Remember the weather on this day last year? Guess');
+    expect(visible).toContain('Remember this day last year? Guess');
     expect(tag).toContain('<template>');
   });
 
@@ -626,11 +626,12 @@ describe('no spoilers for today or later questions (Darren 2026-10-29)', () => {
     expect(html).toContain('data-streak-pre');
   });
 
-  it('tomorrow and the day after no longer show last year’s temperature', async () => {
+  it('tomorrow and the day after show neither last year’s temperature nor the guess (only today has it)', async () => {
     for (const sub of ['tomorrow', 'day-after']) {
       const html = await (await app().request(req(`/wmi/en/w/102643743/${sub}`))).text();
       expect(html).not.toContain('Same day last year');
-      expect(html).toContain('/wmi/en/w/102643743/climate');
+      expect(html).not.toContain('Remember this day last year');
+      expect(html).not.toContain('class="vs"');
     }
   });
 
@@ -654,7 +655,7 @@ describe('ranking records only the real yesterday', () => {
 describe('home tag without a question yet', () => {
   it('invites people to remember last year, and can scroll inside the pill', async () => {
     const html = await (await app(new MockProvider(() => NOW), null).request(req('/wmi/en/w/102643743'))).text();
-    expect(html).toContain('Remember the weather on this day last year? Guess');
+    expect(html).toContain('Remember this day last year? Guess');
     expect(html).toContain('data-marquee');
     expect(html).not.toContain('Today vs. last year –');
   });

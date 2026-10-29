@@ -310,7 +310,7 @@
   "ClimateRainLastYear": "ปีที่แล้ว",
   "ClimateRainThisYear": "ปีนี้",
   "ClimateRainPast": "ใน {days} วันนี้ ปีนี้มีฝนหรือหิมะ {now} วัน ปีที่แล้ว {last} วัน",
-  "ClimateTeaser": "จำอากาศวันนี้เมื่อปีที่แล้วได้ไหม? ลองทาย",
+  "ClimateTeaser": "จำวันนี้ปีที่แล้วได้ไหม? ลองทาย",
   "StreakCurrent": "ทายถูกติดต่อกัน {n} วัน",
   "StreakBest": "สูงสุด {n} วัน",
   "StreakBroken": "สถิติต่อเนื่องขาดแล้ว",

@@ -310,7 +310,7 @@
   "ClimateRainLastYear": "去年",
   "ClimateRainThisYear": "今年",
   "ClimateRainPast": "この{days}日間で雨や雪が降ったのは今年{now}日、昨年{last}日でした。",
-  "ClimateTeaser": "去年の今日の天気、覚えていますか？予想しよう",
+  "ClimateTeaser": "去年の今日、覚えてる？予想しよう",
   "StreakCurrent": "{n}日連続正解中",
   "StreakBest": "最長{n}日",
   "StreakBroken": "連続記録が途切れました",

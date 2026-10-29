@@ -310,7 +310,7 @@
   "ClimateRainLastYear": "पिछला साल",
   "ClimateRainThisYear": "इस साल",
   "ClimateRainPast": "इन {days} दिनों में इस साल {now} दिन और पिछले साल {last} दिन बारिश या बर्फ़ गिरी।",
-  "ClimateTeaser": "क्या आपको पिछले साल आज का मौसम याद है? अंदाज़ा लगाइए",
+  "ClimateTeaser": "पिछले साल का आज याद है? अंदाज़ा लगाइए",
   "StreakCurrent": "लगातार {n} दिन सही",
   "StreakBest": "सबसे ज़्यादा {n} दिन",
   "StreakBroken": "सिलसिला टूट गया",

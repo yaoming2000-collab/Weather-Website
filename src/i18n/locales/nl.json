@@ -310,7 +310,7 @@
   "ClimateRainLastYear": "Vorig jaar",
   "ClimateRainThisYear": "Dit jaar",
   "ClimateRainPast": "In deze {days} dagen regende of sneeuwde het dit jaar op {now} dagen en vorig jaar op {last} dagen.",
-  "ClimateTeaser": "Weet je nog hoe het weer vandaag vorig jaar was? Raad maar",
+  "ClimateTeaser": "Weet je het nog, vorig jaar? Raad",
   "StreakCurrent": "{n} dagen op rij goed",
   "StreakBest": "record: {n} dagen",
   "StreakBroken": "Reeks onderbroken",

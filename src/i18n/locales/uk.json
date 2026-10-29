@@ -310,7 +310,7 @@
   "ClimateRainLastYear": "Торік",
   "ClimateRainThisYear": "Цього року",
   "ClimateRainPast": "За ці {days} дн. дощ або сніг був {now} дн. цього року і {last} дн. минулого.",
-  "ClimateTeaser": "Пам'ятаєте погоду цього дня торік? Вгадайте",
+  "ClimateTeaser": "Пам'ятаєте цей день торік? Вгадайте",
   "StreakCurrent": "Вгадано днів поспіль: {n}",
   "StreakBest": "рекорд: {n}",
   "StreakBroken": "Серію перервано",
