@@ -5,7 +5,7 @@ import { MockProvider } from '../src/weather/mock';
 import { ProviderError } from '../src/weather/provider';
 import { fromCurrentHour, searchLongEnough, shouldFetchNowcast, WeatherService } from '../src/weather/service';
 import { MockHistory, type PastWeatherSource } from '../src/weather/history';
-import { HISTORY_MAX_ATTEMPTS, MemoryHistoryQueue } from '../src/weather/historyQueue';
+import { HISTORY_MAX_ATTEMPTS, KvHistoryQueue, MemoryHistoryQueue } from '../src/weather/historyQueue';
 import type { CacheStore } from '../src/cache/store';
 
 function setup(startMs = Date.UTC(2026, 9, 22, 3, 0)) {
@@ -503,6 +503,42 @@ describe('last year via the prefetch queue (OpenWeather is too slow for pages)',
     expect([...queue.jobs.values()].every((j) => j.attempts === 1)).toBe(true);
     for (let i = 1; i < HISTORY_MAX_ATTEMPTS; i++) await make().drainHistoryQueue();
     expect(queue.jobs.size).toBe(0);
+    // 放弃后页面不再把它放回队列，也不说"正在准备"：今天不出题
+    const adds = queue.adds;
+    const bundle = await make().cityBundle('102643743');
+    expect(queue.adds).toBe(adds);
+    expect(queue.jobs.size).toBe(0);
+    expect(bundle.missing).not.toContain('lastYearPending');
+    expect(bundle.lastYear).toBeNull();
+  });
+
+  it('stops the run on a key or quota problem and keeps the jobs; pages stop queuing on 401/403', async () => {
+    for (const status of [401, 429]) {
+      const { calls, queue, make } = setup(() => new ProviderError('nope', status));
+      await make().cityBundle('102643743');
+      const queued = queue.jobs.size;
+      const r = await make().drainHistoryQueue({ concurrency: 1 });
+      expect(r.stopped).toBe(status);
+      expect(calls).toHaveLength(1);
+      expect(queue.jobs.size).toBe(queued);
+      expect([...queue.jobs.values()].every((j) => j.attempts === 0)).toBe(true);
+    }
+  });
+
+  it('takes fresh jobs before ones that keep failing', async () => {
+    const q = new MemoryHistoryQueue();
+    await q.add({ cityId: 'a', lat: 0, lon: 0, start: '2025-10-20' });
+    await q.add({ cityId: 'b', lat: 0, lon: 0, start: '2025-10-20' });
+    await q.retry((await q.take(1))[0]!);
+    expect((await q.take(2)).map((j) => j.cityId)).toEqual(['b', 'a']);
+  });
+
+  it('says "being prepared" only for the days whose block is queued', async () => {
+    const { make } = setup();
+    const svc = make();
+    const ly = await svc.lastYear({ id: '102643743', name: 'London', adminArea: null, country: 'GB', timezone: 'Europe/London', lat: 51.5, lon: -0.12 }, ['2026-10-22', '2026-10-23']);
+    expect(ly.pending).toBe(true);
+    expect(ly.pendingDates).toEqual(['2026-10-22', '2026-10-23']);
   });
 
   it('stops starting new requests after the deadline', async () => {
@@ -520,5 +556,48 @@ describe('last year via the prefetch queue (OpenWeather is too slow for pages)',
     const bundle = await svc.cityBundle('102643743');
     expect(calls.length).toBeGreaterThanOrEqual(2);
     expect(Object.keys(bundle.lastYear!.data)).toHaveLength(15);
+  });
+});
+
+describe('KV history queue', () => {
+  function fakeKv() {
+    const map = new Map<string, { value: string; metadata: unknown }>();
+    const kv = {
+      map,
+      get: async (k: string) => map.get(k)?.value ?? null,
+      put: async (k: string, value: string, o?: { metadata?: unknown }) => void map.set(k, { value, metadata: o?.metadata }),
+      delete: async (k: string) => void map.delete(k),
+      list: async ({ prefix }: { prefix: string }) => ({
+        keys: [...map.entries()].filter(([k]) => k.startsWith(prefix)).sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, v]) => ({ name, metadata: v.metadata })),
+      }),
+    };
+    return kv;
+  }
+
+  it('adds once, keeps attempts in metadata, gives up after the limit', async () => {
+    const kv = fakeKv();
+    const q = new KvHistoryQueue(kv as unknown as KVNamespace);
+    const job = { cityId: '102643743', lat: 51.5, lon: -0.12, start: '2025-10-20' };
+    await q.add(job);
+    let [taken] = await q.take(10);
+    expect(taken).toEqual({ ...job, attempts: 0 });
+    await q.retry(taken!);
+    await q.add(job); // 已在队列：不清零
+    [taken] = await q.take(10);
+    expect(taken!.attempts).toBe(1);
+    for (let i = 1; i < HISTORY_MAX_ATTEMPTS; i++) {
+      [taken] = await q.take(10);
+      await q.retry(taken!);
+    }
+    expect(await q.take(10)).toEqual([]);
+    await q.add(job);
+    await q.done((await q.take(10))[0]!);
+    expect(kv.map.size).toBe(0);
+  });
+
+  it('ignores malformed entries', async () => {
+    const kv = fakeKv();
+    kv.map.set('q:ly:x:2025-10-20', { value: '1', metadata: { cityId: 'x' } });
+    expect(await new KvHistoryQueue(kv as unknown as KVNamespace).take(10)).toEqual([]);
   });
 });

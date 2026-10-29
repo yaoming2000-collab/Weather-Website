@@ -15,7 +15,7 @@ import { WIKIDATA_LANGS, type AreaSearchSource, type PlaceNamesSource, type Wiki
 import { isoOfCountry } from '../geo/countries';
 import { normalizeSearch, searchLongEnough } from './search';
 import { historyBlockStart, lastYearDate, type PastDay, type PastWeatherSource } from './history';
-import type { HistoryQueue } from './historyQueue';
+import { HISTORY_MAX_ATTEMPTS, type HistoryQueue } from './historyQueue';
 
 export { normalizeSearch, searchLongEnough };
 import { ProviderError, type WeatherProvider } from './provider';
@@ -458,7 +458,7 @@ export class WeatherService {
   async lastYear(
     location: WeatherLocation,
     dates: string[],
-  ): Promise<Fetched<Record<string, PastDay>> & { partial?: boolean; pending?: boolean }> {
+  ): Promise<Fetched<Record<string, PastDay>> & { partial?: boolean; pending?: boolean; pendingDates?: string[] }> {
     const source = this.history;
     if (!source || dates.length === 0) return { data: {}, fetchedAt: this.now() };
     const wanted = dates.map((d) => ({ date: d, past: lastYearDate(d) }));
@@ -475,11 +475,15 @@ export class WeatherService {
     const byPast = new Map<string, PastDay>();
     let fetchedAt = this.now();
     const failures: unknown[] = [];
-    results.forEach((r) => {
+    const pendingBlocks = new Set<string>();
+    results.forEach((r, i) => {
       if (r.status === 'fulfilled') {
         fetchedAt = Math.min(fetchedAt, r.value.fetchedAt);
         for (const d of r.value.data) byPast.set(d.date, d);
-      } else failures.push(r.reason);
+      } else {
+        failures.push(r.reason);
+        if (statusOf(r.reason) === PENDING) pendingBlocks.add(blocks[i]!);
+      }
     });
     const pending = failures.some((e) => statusOf(e) === PENDING);
     // 全部失败（而且不是在排队）时报错（页面记为"缺数据"，只缓存 1 分钟）；部分失败时用拿到的
@@ -494,7 +498,9 @@ export class WeatherService {
       const st = statusOf(e);
       return st !== PENDING && !isAbsent(st);
     });
-    return { data, fetchedAt, partial, pending };
+    // 哪些天在等（页面据此决定"正在准备"还是"没有数据"）
+    const pendingDates = wanted.filter((w) => pendingBlocks.has(historyBlockStart(w.past))).map((w) => w.date);
+    return { data, fetchedAt, partial, pending, pendingDates };
   }
 
   /**
@@ -506,7 +512,8 @@ export class WeatherService {
     if (hit) return { data: hit.value, fetchedAt: hit.fetchedAt };
     const now = this.now();
     const failed = await this.store.get<FailureMark>(`${key}:fail`);
-    if (failed && now < (failed.freshUntil ?? 0) && failed.value.status === 404) throw new ProviderError(`no data: ${key}`, 404);
+    // 定时任务写在全球的标记：没有这份数据、放弃了（都记 404）、密钥问题（401/403）→ 不再排队，今天不出题
+    if (failed && now < (failed.freshUntil ?? 0) && isAbsent(failed.value.status)) throw new ProviderError(`no data: ${key}`, failed.value.status ?? 404);
     const last = this.queuedAt.get(key);
     if (last === undefined || now - last > REQUEUE_AFTER_MS) {
       this.queuedAt.set(key, now);
@@ -520,20 +527,30 @@ export class WeatherService {
 
   /**
    * 定时任务：把队列里的去年数据取回来，存进缓存（KV，所有机房共用）。
-   * - 同时最多 concurrency 个请求（Workers 同时只能开 6 个连接）
+   * - 同时最多 concurrency 个请求（Workers 同时只能开 6 个连接，写缓存也占连接，留余量）
    * - 过了 stopAt 不再开始新的请求（避免和下一次定时任务重叠）
-   * - "没有这份数据"（404）、密钥问题（401/403）：从队列删掉；其他失败：下次再试，最多 HISTORY_MAX_ATTEMPTS 次
+   * - 没有这份数据（404）：删掉任务（失败标记由 cached() 写在全球，页面不再排队）
+   * - 密钥或套餐问题（401/403）、限流（429）：后面的任务也会一样失败，这次到此为止；401/403 在全球记 1 小时，页面期间不排队
+   * - 其他失败：下次再试；试满 HISTORY_MAX_ATTEMPTS 次后在全球记"放弃"（GIVE_UP_SECONDS），页面期间不再排队、不出题
    */
-  async drainHistoryQueue(options: { limit?: number; concurrency?: number; stopAt?: number } = {}): Promise<{ fetched: number; dropped: number; retried: number; left: number }> {
+  async drainHistoryQueue(
+    options: { limit?: number; concurrency?: number; stopAt?: number } = {},
+  ): Promise<{ fetched: number; dropped: number; retried: number; left: number; stopped?: number }> {
     const queue = this.historyQueue;
     const source = this.history;
-    const stats = { fetched: 0, dropped: 0, retried: 0, left: 0 };
+    const stats: { fetched: number; dropped: number; retried: number; left: number; stopped?: number } = { fetched: 0, dropped: 0, retried: 0, left: 0 };
     if (!queue || !source) return stats;
     const jobs = await queue.take(options.limit ?? HISTORY_DRAIN.limit);
     const stopAt = options.stopAt ?? Infinity;
     let next = 0;
+    let halted = false;
+    const mark = (key: string, status: number, seconds: number) => {
+      const now = this.now();
+      const entry: CacheEntry<FailureMark> = { value: { status }, fetchedAt: now, freshUntil: now + seconds * 1000 };
+      return this.store.put(`${key}:fail`, entry, seconds).catch(() => undefined);
+    };
     const worker = async () => {
-      while (next < jobs.length && Date.now() < stopAt) {
+      while (!halted && next < jobs.length && Date.now() < stopAt) {
         const job = jobs[next++]!;
         const key = historyKey(source.name, job.cityId, job.start);
         try {
@@ -541,11 +558,25 @@ export class WeatherService {
           await queue.done(job);
           stats.fetched++;
         } catch (err) {
-          if (isAbsent(statusOf(err))) {
+          const status = statusOf(err);
+          if (status === 404) {
+            await queue.done(job).catch(() => undefined);
+            stats.dropped++;
+            continue;
+          }
+          this.log(`[weather] history ${key} failed (attempt ${job.attempts + 1}): ${(err as Error).message}`);
+          if (status === 401 || status === 403 || status === 429) {
+            halted = true;
+            stats.stopped = status;
+            // 不算这个任务的失败次数（不是它的问题），留在队列里下次再取
+            if (status !== 429) await mark(key, status, HISTORY_FORBIDDEN_SECONDS);
+            continue;
+          }
+          if (job.attempts + 1 >= HISTORY_MAX_ATTEMPTS) {
+            await mark(key, 404, GIVE_UP_SECONDS);
             await queue.done(job).catch(() => undefined);
             stats.dropped++;
           } else {
-            this.log(`[weather] history ${key} failed (attempt ${job.attempts + 1}): ${(err as Error).message}`);
             await queue.retry(job).catch(() => undefined);
             stats.retried++;
           }
@@ -643,7 +674,11 @@ const PENDING = 202;
 /** 同一实例里，放进队列后多久才再放一次（防止队列里的任务被放弃后一直不再排队） */
 const REQUEUE_AFTER_MS = 30 * 60_000;
 /** 每次定时任务最多处理多少块、同时几个请求 */
-export const HISTORY_DRAIN = { limit: 60, concurrency: 5 };
+export const HISTORY_DRAIN = { limit: 60, concurrency: 4 };
+/** 试满次数还没取到：12 小时内不再排队（页面显示"没有数据"、不出题），之后再试 */
+const GIVE_UP_SECONDS = 12 * 3600;
+/** 密钥或套餐问题：1 小时内不再排队 */
+const HISTORY_FORBIDDEN_SECONDS = 3600;
 
 /** 去年数据的缓存键（10 天一块） */
 export function historyKey(source: string, cityId: string, start: string): string {
@@ -687,7 +722,7 @@ export interface CityBundle {
   daily: Fetched<DailyPoint[]> | null;
   air: Fetched<AirQualityPoint[]> | null;
   /** 去年同一天的实际天气，键是今年的日期；没取到时为 null */
-  lastYear: Fetched<Record<string, PastDay>> | null;
+  lastYear: (Fetched<Record<string, PastDay>> & { pendingDates?: string[] }) | null;
   nowcast: Fetched<NowcastPoint[]> | null;
   radar: boolean;
   /** 这次没取到的非必需数据（限流、超时等临时原因）。不为空时页面只缓存 1 分钟。 */

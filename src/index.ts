@@ -19,7 +19,12 @@ export default {
    */
   async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext) {
     if (event.cron === HISTORY_CRON) {
-      ctx.waitUntil(prefetchLastYear(env));
+      // 直接等它做完（最长约 9.5 分钟，定时任务最多 15 分钟），不放进 waitUntil
+      await prefetchLastYear(env);
+      return;
+    }
+    if (event.cron !== CLEANUP_CRON) {
+      console.error('[cron] unknown schedule (wrangler.toml 和 src/index.ts 要一致)', event.cron);
       return;
     }
     ctx.waitUntil(createFeatureStore(env.DB).cleanup(Date.now()));
@@ -27,8 +32,9 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-/** 和 wrangler.toml [triggers] 里的写法一致 */
+/** 和 wrangler.toml [triggers] 里的写法一致（改一边要改另一边） */
 const HISTORY_CRON = '*/10 * * * *';
+const CLEANUP_CRON = '17 3 * * *';
 /** 开始 8 分钟后不再开始新的请求（每个最多 90 秒），赶在下一次定时任务之前结束 */
 const HISTORY_RUN_MS = 8 * 60_000;
 

@@ -7,7 +7,7 @@ import { MockProvider } from '../src/weather/mock';
 import { ProviderError, type WeatherProvider } from '../src/weather/provider';
 import { WeatherService } from '../src/weather/service';
 import { MockHistory, type PastWeatherSource } from '../src/weather/history';
-import { HISTORY_MAX_ATTEMPTS, MemoryHistoryQueue } from '../src/weather/historyQueue';
+import { MemoryHistoryQueue } from '../src/weather/historyQueue';
 
 const NOW = Date.UTC(2026, 9, 22, 3, 0);
 

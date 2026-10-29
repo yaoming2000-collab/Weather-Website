@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addCity, MAX_CITIES, mergeCities, parseLegacy, parseSaved, readCookie, removeCity } from '../client/lib/saved';
 import { cityToday, minutesAgo, pastHourCount } from '../client/lib/time';
-import { citiesBackPath, lastCityCookie, parseLastCity } from '../client/lib/lastCity';
+import { citiesBack, lastCityCookie, parseLastCity } from '../client/lib/lastCity';
 import { defaultUnits, formatDistance, formatPrecip, formatSpeed, formatTemp, formatTempDelta, fromLegacy, parseUnits } from '../client/lib/units';
 
 describe('units', () => {
@@ -161,13 +161,18 @@ describe('last city (My Cities back link)', () => {
   });
 
   it('goes back to the city page the visitor came from, in the current language', () => {
-    expect(citiesBackPath(`https://${host}/wmi/en/w/102643743/climate?session=1`, host, last, 'zh')).toBe('/wmi/zh/w/102643743/climate');
+    expect(citiesBack(`https://${host}/wmi/en/w/101796236/climate?session=1`, host, last, 'zh')).toEqual({ path: '/wmi/zh/w/101796236/climate', label: '上海' });
+  });
+
+  it('only names the city when the link really goes there (another tab may have changed the last city)', () => {
+    expect(citiesBack(`https://${host}/wmi/en/w/102643743`, host, last, 'zh')).toEqual({ path: '/wmi/zh/w/102643743', label: null });
   });
 
   it('otherwise goes to the last city; nothing known keeps the server link', () => {
-    expect(citiesBackPath(`https://${host}/wmi/zh/settings`, host, last, 'en')).toBe('/wmi/en/w/101796236');
-    expect(citiesBackPath('https://other.example/wmi/en/w/1', host, null, 'en')).toBeNull();
-    expect(citiesBackPath('', host, null, 'en')).toBeNull();
+    expect(citiesBack(`https://${host}/wmi/zh/settings`, host, last, 'en')).toEqual({ path: '/wmi/en/w/101796236', label: '上海' });
+    expect(citiesBack('https://other.example/wmi/en/w/1', host, null, 'en')).toEqual({ path: null, label: null });
+    expect(citiesBack('', host, null, 'en')).toEqual({ path: null, label: null });
+    expect(parseLastCity(JSON.stringify({ ...last, path: '/\\evil.com/zh/w/1' }))).toBeNull();
   });
 
   it('cookie lasts a year and is Secure on https', () => {

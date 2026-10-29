@@ -164,7 +164,7 @@ export function ClimatePage(p: PageProps) {
   // 去年数据或今年预报这次没取到（临时失败）→ 提示稍后再试；一直没有去年数据 → 说明
   const transient = bundle.missing.some((m) => m === 'lastYear' || m === 'daily');
   // 新城市的去年数据正在排队等定时任务取（10 分钟左右）：今天先不出题，连续猜对不算断
-  const preparing = !transient && bundle.missing.includes('lastYearPending');
+  const preparing = !transient && !!bundle.lastYear?.pendingDates?.includes(bundle.today);
 
   return (
     <Layout lang={lang} title={`${title} · ${loc.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={{ ...cityPageData(p), page: 'climate' }}>

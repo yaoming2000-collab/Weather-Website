@@ -15,7 +15,7 @@ export interface LastCity {
   path: string;
 }
 
-const CITY_PATH = /^\/[^/]+\/[a-z]{2}\/w\/[^/]+/;
+const CITY_PATH = /^\/[A-Za-z0-9_-]+\/[a-z]{2}\/w\/[^/]+/;
 
 export function parseLastCity(raw: string | null): LastCity | null {
   try {
@@ -32,10 +32,10 @@ export function lastCityCookie(id: string, secure: boolean): string {
 }
 
 /**
- * 收藏页"返回"去哪：从本站城市页进来的就回那一页；否则回上次看的城市；都没有时返回 null（保持服务器给的首页链接）。
- * 网址里的语言换成当前页面的语言。
+ * 收藏页"返回"：从本站城市页进来的就回那一页；否则回上次看的城市；都没有时 path 为 null（保持服务器给的首页链接）。
+ * 网址里的语言换成当前页面的语言。label：去的正好是上次看的城市时用它的名字，否则 null（显示"返回"）。
  */
-export function citiesBackPath(referrer: string, host: string, last: LastCity | null, lang: string): string | null {
+export function citiesBack(referrer: string, host: string, last: LastCity | null, lang: string): { path: string | null; label: string | null } {
   let path: string | null = null;
   try {
     const ref = referrer ? new URL(referrer) : null;
@@ -44,5 +44,7 @@ export function citiesBackPath(referrer: string, host: string, last: LastCity | 
     path = null;
   }
   path ??= last?.path ?? null;
-  return path ? path.replace(/^(\/[^/]+\/)[a-z]{2}\//, `$1${lang}/`) : null;
+  if (!path) return { path: null, label: null };
+  const id = path.split('/')[4];
+  return { path: path.replace(/^(\/[^/]+\/)[a-z]{2}\//, `$1${lang}/`), label: last && id === last.id ? last.name : null };
 }

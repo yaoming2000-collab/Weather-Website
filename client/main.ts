@@ -20,7 +20,7 @@ import {
 } from './lib/saved';
 import { entryKey, GUESS_KEY, isChoice, percentRight, readBook, VOTE_KEY, writeBook, type Choice, type Counts } from './lib/interact';
 import { currentStreak, readStreaks, recordResult, recordSkip, STREAK_KEY } from './lib/streak';
-import { citiesBackPath, LAST_CITY_KEY, lastCityCookie, parseLastCity } from './lib/lastCity';
+import { citiesBack, LAST_CITY_KEY, lastCityCookie, parseLastCity } from './lib/lastCity';
 import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS, STALE_AFTER_MIN } from './lib/time';
 import { drawCard, shareOrDownload } from './share';
 import { reportWebVitals } from './vitals';
@@ -225,10 +225,10 @@ function setupCitiesBack() {
   const back = document.querySelector<HTMLAnchorElement>('[data-cities-back]');
   if (!back) return;
   const last = parseLastCity(storage.get(LAST_CITY_KEY));
-  const path = citiesBackPath(document.referrer, location.host, last, data.lang);
+  const { path, label } = citiesBack(document.referrer, location.host, last, data.lang);
   if (path) back.setAttribute('href', withNav(path));
-  const label = back.querySelector('span');
-  if (label && last?.name) label.textContent = last.name;
+  const span = back.querySelector('span');
+  if (span && label) span.textContent = label;
 }
 
 // ---------- 3. 现在、今天、更新时间 ----------

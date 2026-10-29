@@ -42,6 +42,11 @@ function validJob(v: unknown): HistoryJob | null {
   return { cityId: j.cityId, start: j.start, lat: j.lat, lon: j.lon, attempts: typeof j.attempts === 'number' ? j.attempts : 0 };
 }
 
+/** 失败次数少的在前（同样次数保持原顺序） */
+function byAttempts(jobs: HistoryJob[]): HistoryJob[] {
+  return jobs.map((j, i) => ({ j, i })).sort((a, b) => a.j.attempts - b.j.attempts || a.i - b.i).map((x) => x.j);
+}
+
 export class KvHistoryQueue implements HistoryQueue {
   constructor(private readonly kv: KVNamespace) {}
 
@@ -53,8 +58,9 @@ export class KvHistoryQueue implements HistoryQueue {
   }
 
   async take(limit: number): Promise<HistoryJob[]> {
-    const res = await this.kv.list<HistoryJob>({ prefix: HISTORY_QUEUE_PREFIX, limit });
-    return res.keys.map((k) => validJob(k.metadata)).filter((j): j is HistoryJob => j !== null);
+    // list 按键名排序：多取一些，新任务（失败次数少的）排前面，免得一直失败的任务每次都占着位置
+    const res = await this.kv.list<HistoryJob>({ prefix: HISTORY_QUEUE_PREFIX, limit: 1000 });
+    return byAttempts(res.keys.map((k) => validJob(k.metadata)).filter((j): j is HistoryJob => j !== null)).slice(0, limit);
   }
 
   async done(job: HistoryJob): Promise<void> {
@@ -80,7 +86,7 @@ export class MemoryHistoryQueue implements HistoryQueue {
   }
 
   async take(limit: number): Promise<HistoryJob[]> {
-    return [...this.jobs.values()].slice(0, limit);
+    return byAttempts([...this.jobs.values()]).slice(0, limit);
   }
 
   async done(job: HistoryJob): Promise<void> {
