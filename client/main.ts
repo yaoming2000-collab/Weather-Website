@@ -212,6 +212,22 @@ function setupSettings() {
   }
 }
 
+/** 胶囊里放不下的文字：量出多出来的宽度，来回滚动（停顿、滚过去、停顿，循环）；放得下就不动 */
+function setupMarquee(root: ParentNode = document) {
+  const rtl = document.documentElement.dir === 'rtl';
+  for (const box of $$('[data-marquee]', root)) {
+    const inner = box.firstElementChild as HTMLElement | null;
+    if (!inner) continue;
+    box.classList.remove('run');
+    const extra = inner.scrollWidth - box.clientWidth;
+    if (extra <= 2) continue;
+    box.style.setProperty('--mq-dist', `${rtl ? extra : -extra}px`);
+    // 每秒约 30 像素，两头各停约 18%（至少 6 秒一轮，短的也能看清）
+    box.style.setProperty('--mq-time', `${Math.max(6, extra / 30 / 0.64).toFixed(1)}s`);
+    box.classList.add('run');
+  }
+}
+
 /** 城市页：记住这个城市，下次打开首页直接来这里（Darren 2026-10-29） */
 function rememberCity() {
   const city = data.city;
@@ -312,6 +328,7 @@ async function refreshLive(retry = true) {
     const theme = doc.querySelector('meta[name="theme-color"]')?.getAttribute('content');
     if (theme) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme);
     revealGuessTags();
+    setupMarquee();
     applyUnits(currentUnits());
     applyTime();
   } catch {
@@ -777,6 +794,14 @@ function init() {
   setupSettings();
   rememberCity();
   setupCitiesBack();
+  setupMarquee();
+  // 只在宽度变化时重量（手机滚动时地址栏伸缩也会触发 resize）
+  let lastWidth = innerWidth;
+  addEventListener('resize', () => {
+    if (innerWidth === lastWidth) return;
+    lastWidth = innerWidth;
+    setupMarquee();
+  });
 
   setupSaveButton();
   void migrateLegacy().then(() => {

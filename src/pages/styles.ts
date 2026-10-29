@@ -170,13 +170,12 @@ body{--cl:255,255,255}
 .place h1{display:flex;align-items:center;gap:6px;margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
 .place h1 span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .place h1 svg{flex:none;width:18px;height:18px;opacity:.9}
-/* 城市主页：第一行城市名（固定 28px，太长时换行、不缩小）；第二行左边地区、右边按钮，底部对齐。
-   第二行有按钮的高度（44px），城市名下面会空出一截；顶部多留 15px，让城市名在上下两段空白之间居中 */
-.city-top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "region btns";align-items:end;column-gap:10px;row-gap:2px;padding-top:15px}
+/* 城市主页：第一行城市名（固定 28px，太长时换行、不缩小）；第二行左边地区、右边按钮，上下居中（Darren 2026-10-29） */
+.city-top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "region btns";align-items:center;column-gap:10px;row-gap:0;padding-top:6px}
 .city-name{grid-area:name;display:flex;align-items:center;gap:6px;margin:0;font-size:28px;font-weight:650;letter-spacing:-.01em;line-height:1.2;min-width:0}
 .city-name span{min-width:0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .city-name svg{flex:none;width:20px;height:20px;opacity:.9}
-.city-top .region{grid-area:region;margin:0;padding-bottom:4px;padding-inline-start:26px;font-size:15px;line-height:1.3;min-width:0;
+.city-top .region{grid-area:region;margin:0;padding-inline-start:26px;font-size:15px;line-height:1.3;min-width:0;
   white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .top-btns{grid-area:btns;display:flex;gap:8px}
 .region{margin-top:1px;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -230,6 +229,13 @@ body{--cl:255,255,255}
   background:rgba(255,255,255,.16)}
 .vs i{width:10px;height:10px;border-radius:50%;background:var(--lv);box-shadow:0 0 0 3px color-mix(in srgb,var(--lv) 35%,transparent)}
 .vs svg{width:14px;height:14px;opacity:.75}
+/* 胶囊里放不下的文字：滚动显示（client/main.ts setupMarquee 量出要滚多远）；"减少动态效果"时用省略号 */
+.vs{max-width:100%}
+.vs .mq{min-width:0;overflow:hidden;white-space:nowrap}
+.vs .mq-in{display:inline-block}
+.vs .mq.run .mq-in{animation:mq var(--mq-time,8s) linear infinite}
+@keyframes mq{0%,18%{transform:translateX(0)}82%,100%{transform:translateX(var(--mq-dist,0))}}
+@media (prefers-reduced-motion:reduce){.vs .mq.run .mq-in{animation:none}.vs .mq{text-overflow:ellipsis}.vs .mq-in{display:inline}}
 /* 标签本身 34px 高，用伪元素把可点区域扩到 44px，不改变布局 */
 .vs{position:relative}.vs::after{content:"";position:absolute;inset:-5px 0}
 

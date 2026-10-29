@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "В этом году",
   "ClimateRainPast": "За эти {days} дн. дождь или снег был {now} дн. в этом году и {last} дн. в прошлом.",
   "ClimateTeaser": "Теплее или холоднее, чем год назад? Угадайте",
+  "ClimateRemember": "Помните погоду в этот день год назад?",
   "StreakCurrent": "Угадано дней подряд: {n}",
   "StreakBest": "рекорд: {n}",
   "StreakBroken": "Серия прервалась",

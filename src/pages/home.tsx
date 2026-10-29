@@ -285,16 +285,17 @@ export function ClimateTag(props: { p: PageProps }) {
   const { p } = props;
   const label = p.features.label;
   const href = cityPath(p.channel, p.lang, p.bundle.location.id, 'climate');
-  // 没有去年数据时保留同样大小的标签（"和去年比 --"），点进去看原因
+  // 还没有题（去年数据在准备，或这个城市一直没有）：显示"还记得去年今天的天气吗？"，点进去看原因
   if (!label) {
     // 一直没有去年数据（不是临时取不到）：今天没出题，连续猜对天数不算断（client/main.ts markSkippedDay）
     const transient = p.bundle.missing.some((m) => m === 'lastYear' || m === 'daily');
     const skip = transient ? {} : { 'data-no-question': '', 'data-city': p.bundle.location.id, 'data-date': p.bundle.today };
     return (
+      // 文案邀请点进去（Darren 2026-10-29）；放不下时在胶囊里滚动（client/main.ts setupMarquee）
       <a class="vs" data-nav href={href} style="--lv:var(--faint)" {...skip}>
         <i />
-        <span>
-          {t(p.lang, 'ClimateTitle')} {DASH}
+        <span class="mq" data-marquee>
+          <span class="mq-in">{t(p.lang, 'ClimateRemember')}</span>
         </span>
         {G.chevron('flip')}
       </a>

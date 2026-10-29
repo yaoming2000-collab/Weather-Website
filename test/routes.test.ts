@@ -650,3 +650,12 @@ describe('ranking records only the real yesterday', () => {
     expect(anomalyRecord(bundle, [point('2026-10-20')], NOW)).toBeNull();
   });
 });
+
+describe('home tag without a question yet', () => {
+  it('invites people to remember last year, and can scroll inside the pill', async () => {
+    const html = await (await app(new MockProvider(() => NOW), null).request(req('/wmi/en/w/102643743'))).text();
+    expect(html).toContain('Remember the weather on this day last year?');
+    expect(html).toContain('data-marquee');
+    expect(html).not.toContain('Today vs. last year –');
+  });
+});

@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "Tänä vuonna",
   "ClimateRainPast": "Näinä {days} päivänä satoi vettä tai lunta tänä vuonna {now} päivänä ja viime vuonna {last} päivänä.",
   "ClimateTeaser": "Lämpimämpää vai kylmempää kuin vuosi sitten? Arvaa",
+  "ClimateRemember": "Muistatko, millainen sää oli tänä päivänä viime vuonna?",
   "StreakCurrent": "{n} päivää peräkkäin oikein",
   "StreakBest": "ennätys {n} päivää",
   "StreakBroken": "Putki katkesi",

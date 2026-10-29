@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "今年",
   "ClimateRainPast": "这 {days} 天里，今年有 {now} 天下雨（雪），去年同期 {last} 天。",
   "ClimateTeaser": "今天比去年热还是冷？猜一猜",
+  "ClimateRemember": "还记得去年今天的天气吗？",
   "StreakCurrent": "已连续猜对 {n} 天",
   "StreakBest": "最长 {n} 天",
   "StreakBroken": "连续记录中断了",

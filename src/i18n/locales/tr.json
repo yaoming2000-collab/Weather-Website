@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "Bu yıl",
   "ClimateRainPast": "Bu {days} günde bu yıl {now} gün, geçen yıl {last} gün yağmur ya da kar yağdı.",
   "ClimateTeaser": "Geçen yıldan daha sıcak mı, soğuk mu? Tahmin et",
+  "ClimateRemember": "Geçen yıl bugünkü havayı hatırlıyor musun?",
   "StreakCurrent": "Üst üste {n} gün doğru",
   "StreakBest": "rekor {n} gün",
   "StreakBroken": "Seri bozuldu",

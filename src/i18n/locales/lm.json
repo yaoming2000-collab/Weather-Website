@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "Este año",
   "ClimateRainPast": "En estos {days} días llovió o nevó {now} días este año y {last} días el año pasado.",
   "ClimateTeaser": "¿Más calor o más frío que hace un año? Adivina",
+  "ClimateRemember": "¿Te acuerdas del clima de este día el año pasado?",
   "StreakCurrent": "Racha de {n} días acertando",
   "StreakBest": "mejor: {n} días",
   "StreakBroken": "Se rompió la racha",

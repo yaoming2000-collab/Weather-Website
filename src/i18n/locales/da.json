@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "I år",
   "ClimateRainPast": "I disse {days} dage regnede eller sneede det {now} dage i år og {last} dage sidste år.",
   "ClimateTeaser": "Varmere eller koldere end sidste år? Gæt",
+  "ClimateRemember": "Kan du huske vejret på denne dag sidste år?",
   "StreakCurrent": "{n} dage i træk rigtigt",
   "StreakBest": "rekord: {n} dage",
   "StreakBroken": "Stimen blev brudt",

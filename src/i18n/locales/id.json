@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "Tahun ini",
   "ClimateRainPast": "Dalam {days} hari ini, hujan atau salju turun {now} hari tahun ini dan {last} hari tahun lalu.",
   "ClimateTeaser": "Lebih hangat atau lebih dingin dari tahun lalu? Tebak",
+  "ClimateRemember": "Ingat cuaca hari ini tahun lalu?",
   "StreakCurrent": "Benar {n} hari berturut-turut",
   "StreakBest": "terbaik {n} hari",
   "StreakBroken": "Rekor beruntun terputus",

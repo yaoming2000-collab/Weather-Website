@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "Năm nay",
   "ClimateRainPast": "Trong {days} ngày này, năm nay có {now} ngày mưa hoặc tuyết, năm ngoái có {last} ngày.",
   "ClimateTeaser": "Nóng hơn hay lạnh hơn năm ngoái? Đoán thử",
+  "ClimateRemember": "Bạn còn nhớ thời tiết ngày này năm ngoái không?",
   "StreakCurrent": "Đoán đúng {n} ngày liên tiếp",
   "StreakBest": "kỷ lục {n} ngày",
   "StreakBroken": "Chuỗi đoán đúng đã bị ngắt",

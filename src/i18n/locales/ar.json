@@ -311,6 +311,7 @@
   "ClimateRainThisYear": "هذا العام",
   "ClimateRainPast": "خلال هذه الأيام الـ{days}، هطل المطر أو الثلج {now} أيام هذا العام و{last} أيام العام الماضي.",
   "ClimateTeaser": "أدفأ أم أبرد من العام الماضي؟ خمّن",
+  "ClimateRemember": "هل تتذكر طقس هذا اليوم من العام الماضي؟",
   "StreakCurrent": "إجابات صحيحة متتالية: {n} يوم",
   "StreakBest": "الأفضل: {n} يوم",
   "StreakBroken": "انقطعت السلسلة",
