@@ -3,6 +3,8 @@
 天气站重建项目。运行在 Cloudflare Workers 上，天气数据来自 Foreca。
 需求文档：<https://claude.ai/artifact/MBdsveGySxK9XyHFmtnEbK>
 
+**接手请先看 [`docs/HANDOVER.md`](docs/HANDOVER.md)**（当前状态、环境和密钥、待办）；用 Codex 的话，工作说明在 [`AGENTS.md`](AGENTS.md)。
+
 ## 进度
 
 | 步骤 | 内容 | 状态 |
@@ -14,9 +16,10 @@
 | — | 缓存和数据获取修正、调用统计 | ✅ PR #5、#6 |
 | 4 | 28 种语言文案（去掉希伯来语，新增保加利亚语、罗马尼亚语）、城市名本地化、阿拉伯语排版、温度和风速单位分开设置、定位失败时用所在国首都 | ✅ PR #7 |
 | 4b | 手机端细节：缺数据显示 "--" 不隐藏区块、出错重试和离线兜底、Core Web Vitals、点按区域 ≥ 44px | ✅ PR #8 |
-| 4c | 往年对比改为和去年同一天比（OpenWeather）、连续猜对天数、设置页（语言、单位）、县区名搜索、首页不提前揭晓答案、iPhone 逐小时滑动 | ✅ 本分支 |
+| 4c | 往年对比改为和去年同一天比（OpenWeather，定时任务预取）、连续猜对天数、设置页（语言、单位）、县区名搜索、首页不提前揭晓答案、iPhone 逐小时滑动、记住上次的城市、过去 7 天对比、排行榜改昨天 | ✅ PR #9 |
+| 4d | 城市页顶部（城市名 32px）、首页胶囊文案统一并改短、猜一猜只在今天 | ✅ PR #10、#11 |
 | 5 | 广告：Darren 自己接入代码，新站只保留广告位占位（`data-slot`） | — |
-| 6 | 部署说明、验收 | 待开始 |
+| 6 | 交接文档、Codex 工作说明；正式环境配置和验收见 `docs/HANDOVER.md` 第 6 节 | 交接中 |
 
 ## 本地运行
 
@@ -28,6 +31,7 @@ cp .dev.vars.example .dev.vars   # 默认使用模拟数据，不需要 Foreca �
 npm run dev                      # 自动打包浏览器脚本，打开 http://127.0.0.1:8787/
 npm test                         # 自动化测试
 npm run typecheck                # 类型检查
+npm run check                    # 类型检查 + 测试（提交前必须通过）
 ```
 
 用真实数据：在 `.dev.vars` 里设置 `WEATHER_PROVIDER=foreca` 和 `FORECA_TOKEN=你的密钥`。
@@ -51,7 +55,7 @@ npm run typecheck                # 类型检查
 | `GET /api/w/{城市ID}/guess?date=`、`POST /api/w/{城市ID}/guess` | 猜一猜：读取计数 / 投票（body：`{"date":"YYYY-MM-DD","choice":"colder\|same\|warmer"}`） |
 | `/api/ranking` | 昨天全球最反常的城市（暖、冷各前 10） |
 
-渠道：`wmi`（默认）、`mi`、`wme`、`wchyin`、`wxiaomi`、`wsearch-mi`。语言：27 种，见 `src/i18n/languages.ts`。
+渠道：`wmi`（默认）、`mi`、`wme`、`wchyin`、`wxiaomi`、`wsearch-mi`。语言：28 种，见 `src/i18n/languages.ts`。
 
 旧网址（`/?city=&lat=&lon=`、`/{渠道}/city/{id}`、`/{渠道}/cities`、`/en/*.html` 法律页面）全部兼容。
 站内跳转始终保留 `session`、`uid`、`locale` 参数。
@@ -62,7 +66,7 @@ npm run typecheck                # 类型检查
 src/
   app.tsx               路由、页面缓存
   config/               渠道、阈值和缓存时长、雷达国家
-  i18n/languages.ts     27 种语言及判断规则（移植自旧站）
+  i18n/languages.ts     28 种语言及判断规则（移植自旧站）
   routing/urls.ts       网址生成、统计参数保留
   geo/visitor.ts        访客位置（Cloudflare request.cf）
   time/cityTime.ts      城市时区计算（星期、日期、当地时间）
@@ -73,7 +77,7 @@ src/
     icons.ts            天气代码 → 我们的图标（需求文档的映射表）
     service.ts          天气数据模块：缓存、合并并发请求、出错时用旧数据
   cache/store.ts        缓存（Cache API + KV 两层）
-  i18n/t.ts, locales/   界面文案（27 种语言沿用旧站翻译；新增文案先写英文，第 4 步补齐）
+  i18n/t.ts, locales/   界面文案（28 种语言；新增文案要 28 个文件一起改，测试会检查）
   weather/derive.ts     等级、描述、颜色（AQI、紫外线、湿度等）
   pages/                页面（服务器生成 HTML）
     sky.ts              背景天空：按城市当地时间（黎明、白天、金光、黄昏、夜晚）和天气选择天色，太阳按真实时间走弧线
@@ -133,18 +137,10 @@ npx wrangler d1 execute weather-features --remote --command "SELECT date, COUNT(
 月费估算：把最近 7 天的日均计费调用 × 30，超过 1,000 万的部分每千次 0.09 €。
 测试环境没有 D1，不统计。
 
-## 部署（第 6 步会补充完整说明）
+## 部署
 
-```bash
-npx wrangler kv namespace create WEATHER_KV                     # 把输出的 id 填进 wrangler.toml
-npx wrangler d1 create weather-features                         # 把输出的 database_id 填进 wrangler.toml
-npx wrangler d1 migrations apply weather-features --remote      # 建表（migrations/ 下的全部文件，含 0002–0004）
-npx wrangler secret put FORECA_TOKEN
-npx wrangler secret put OWM_KEY        # OpenWeather One Call API（去年同一天的天气）
-npx wrangler deploy
-```
-
-测试环境（`--env preview`）需要一个 KV（去年数据由定时任务存进 KV），不需要 D1，见 `docs/deploy-preview.md`。
+KV、D1 已经建好，id 已写在 `wrangler.toml`，**不要再执行 `kv namespace create` / `d1 create`**（会建出新的一套、覆盖现有 id）。
+部署命令、密钥和正式上线前的待办见 [`docs/HANDOVER.md`](docs/HANDOVER.md) 第 5、6 节。
 
 ## 第 3 步的存储为什么用 D1
 
