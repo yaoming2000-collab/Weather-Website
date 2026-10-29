@@ -68,10 +68,11 @@ function Thermometer(props: { lang: Lang; lastMin: number | null; lastMax: numbe
  * 过去 7 天：今年实际最高温（实线）和去年同一天的实际最高温（虚线），灰色带是"和去年差不多"的范围（去年 ±2°）。
  * 只有过去的日子（2026-10-29 起）：不含今天和以后，猜之前完整显示也不会透露答案。
  */
-function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
+function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang; preparing?: boolean }) {
   const pts = props.series.filter((s) => s.maxTemp !== null && s.lastMaxTemp !== null);
   // 数据不够时占同样高度，显示 --
-  if (pts.length < 3) return <div class="ph-chart">{DASH}</div>;
+  // 数据正在准备（排队等定时任务）时说明一下，免得以为坏了
+  if (pts.length < 3) return <div class="ph-chart">{props.preparing ? <span class="ph-note">{t(props.lang, 'ClimatePreparing')}</span> : DASH}</div>;
   const rtl = textDirection(props.lang) === 'rtl';
   const W = 340;
   const H = 150;
@@ -161,6 +162,8 @@ export function ClimatePage(p: PageProps) {
   const transient = bundle.missing.some((m) => m === 'lastYear' || m === 'daily');
   // 新城市的去年数据正在排队等定时任务取（10 分钟左右）：今天先不出题，连续猜对不算断
   const preparing = !transient && !!bundle.lastYear?.pendingDates?.includes(bundle.today);
+  // 过去 7 天（今年或去年）有一块还在排队
+  const pastPending = features.series.some((p) => bundle.pastWeek?.pendingDates?.includes(p.date) || bundle.lastYear?.pendingDates?.includes(p.date));
 
   return (
     <Layout lang={lang} title={`${title} · ${loc.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={{ ...cityPageData(p), page: 'climate' }}>
@@ -239,7 +242,7 @@ export function ClimatePage(p: PageProps) {
 
       <section class="card">
         <Sec icon={G.calendar()} title={t(lang, 'ClimateChartTitle')} />
-        <SeriesChart series={features.series} lang={lang} />
+        <SeriesChart series={features.series} lang={lang} preparing={pastPending} />
         <div class="legend">
           <span>
             <i class="sw line" />
@@ -270,7 +273,7 @@ export function ClimatePage(p: PageProps) {
             <b>{rain ? rain.thisYearRainyDays : DASH}</b>
           </div>
         </div>
-        <p class="note">{rain ? t(lang, 'ClimateRainPast', { days: rain.days, now: rain.thisYearRainyDays, last: rain.lastYearRainyDays }) : DASH}</p>
+        <p class="note">{rain ? t(lang, 'ClimateRainPast', { days: rain.days, now: rain.thisYearRainyDays, last: rain.lastYearRainyDays }) : pastPending ? t(lang, 'ClimatePreparing') : DASH}</p>
       </section>
 
       <AdSlot slot="climate_2" lang={lang} />

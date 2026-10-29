@@ -602,6 +602,8 @@ describe('last year being prepared', () => {
     const html = await res.text();
     expect(html).toContain('正在准备这座城市去年的天气数据');
     expect(html).toContain('data-no-question');
+    // 过去 7 天的图也说明在准备，不只是 "--"
+    expect(html).toContain('class="ph-note"');
     expect(html).not.toContain('data-guess=');
     expect(res.headers.get('X-Page-TTL')).not.toBe(null);
     expect(Number(res.headers.get('X-Page-TTL'))).toBeLessThanOrEqual(60);

@@ -176,7 +176,8 @@ body{--cl:255,255,255}
 .city-name{grid-area:name;display:flex;align-items:center;gap:6px;margin:0;font-size:28px;font-weight:650;letter-spacing:-.01em;line-height:1.2;min-width:0}
 .city-name span{min-width:0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .city-name svg{flex:none;width:20px;height:20px;opacity:.9}
-.city-top .region{grid-area:region;margin:0;padding-bottom:4px;padding-inline-start:26px;font-size:15px;line-height:1.3;min-width:0}
+.city-top .region{grid-area:region;margin:0;padding-bottom:4px;padding-inline-start:26px;font-size:15px;line-height:1.3;min-width:0;
+  white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .top-btns{grid-area:btns;display:flex;gap:8px}
 .region{margin-top:1px;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .region.wrap{white-space:normal;overflow:visible}
@@ -249,6 +250,7 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .nc-msg{font-size:17px;font-weight:550;line-height:1.35}
 .ico-ph{display:inline-block;flex:none;border-radius:50%;background:rgba(255,255,255,.12)}
 .ph-chart{display:grid;place-items:center;aspect-ratio:340/150;margin-top:4px;color:var(--faint);font-size:20px}
+.ph-chart .ph-note{font-size:14px;line-height:1.5;text-align:center;padding:0 12px;color:var(--mut)}
 .cmp-bars i.ph{width:0;min-width:0}
 .nc-bars{display:grid;grid-template-columns:repeat(8,1fr);align-items:end;gap:5px;height:56px;margin:14px 0 6px;padding-bottom:1px;border-bottom:1px solid var(--line)}
 .nc-bars span{display:block;border-radius:5px 5px 2px 2px;background:var(--rain);min-height:3px;opacity:.95}
