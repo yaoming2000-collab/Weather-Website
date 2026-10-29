@@ -270,22 +270,22 @@ export function Sec(props: { icon: Child; title: string; more?: string; href?: s
 export function TopBar(props: { location: WeatherLocation; channel: Channel; lang: Lang }) {
   const { location: loc, lang } = props;
   return (
-    <header class="top">
-      {/* 城市名放大；地区放在城市名右下，一行放不下时自动换到下一行 */}
-      <div class="place city-head">
-        <h1>
-          {G.pin()}
-          <span>{loc.name}</span>
-        </h1>
-        <div class="region">{[loc.adminArea, loc.country].filter((x) => x && x !== loc.name).join(', ')}</div>
+    <header class="top city-top">
+      {/* 城市名单独一行，固定 28px、不压缩（太长时换行）；下一行左边地区、右边按钮，底部对齐（Darren 2026-10-29） */}
+      <h1 class="city-name">
+        {G.pin()}
+        <span>{loc.name}</span>
+      </h1>
+      <div class="region">{[loc.adminArea, loc.country].filter((x) => x && x !== loc.name).join(', ')}</div>
+      <div class="top-btns">
+        <SettingsLink channel={props.channel} lang={lang} />
+        <button class="btn" type="button" data-save aria-pressed="false" aria-label={t(lang, 'AddToMyCities')}>
+          {G.star()}
+        </button>
+        <a class="btn" data-nav href={citiesPath(props.channel, lang)} aria-label={t(lang, 'MyCitiesTitle')}>
+          {G.list()}
+        </a>
       </div>
-      <SettingsLink channel={props.channel} lang={lang} />
-      <button class="btn" type="button" data-save aria-pressed="false" aria-label={t(lang, 'AddToMyCities')}>
-        {G.star()}
-      </button>
-      <a class="btn" data-nav href={citiesPath(props.channel, lang)} aria-label={t(lang, 'MyCitiesTitle')}>
-        {G.list()}
-      </a>
     </header>
   );
 }
@@ -358,6 +358,8 @@ export function clientStrings(lang: Lang): Record<string, string> {
     'UpdatedMinutesAgo',
     'UpdatedHoursAgo',
     'StreakCurrent',
+    'StreakBeforeGuess',
+    'StreakRestart',
     'StreakBest',
     'StreakBroken',
     'OfflineNotice',

@@ -103,61 +103,70 @@ export function compareToday(day: DailyPoint | undefined, past: PastDay | null |
 }
 
 // ---------------------------------------------------------------------------
-// 15 天对比：每天和去年同一天比
+// 过去 7 天：今年实际 vs 去年同期（2026-10-29 起，只用过去的日子，不泄漏以后的题）
 // ---------------------------------------------------------------------------
 
 export interface ClimateSeriesPoint {
   date: string;
+  /** 今年这天的实际最高温 */
   maxTemp: number | null;
-  minTemp: number | null;
-  /** 去年同一天的实际最高、最低温 */
+  /** 去年同一天的实际最高温 */
   lastMaxTemp: number | null;
-  lastMinTemp: number | null;
-  /** 最高温偏差；任一值缺失时为 null */
+  /** 今年 − 去年；任一值缺失时为 null */
   delta: number | null;
   /** 偏差超过 ±2° 的日子标颜色；其余为 normal */
   level: ClimateLevel | null;
 }
 
-export function climateSeries(daily: DailyPoint[], lastYear: Record<string, PastDay> | null | undefined): ClimateSeriesPoint[] {
-  return daily.map((day) => {
-    const past = lastYear?.[day.date];
-    const lastMaxTemp = past?.maxTemp ?? null;
-    const delta = day.maxTemp !== null && lastMaxTemp !== null ? round1(day.maxTemp - lastMaxTemp) : null;
-    return {
-      date: day.date,
-      maxTemp: day.maxTemp,
-      minTemp: day.minTemp,
-      lastMaxTemp,
-      lastMinTemp: past?.minTemp ?? null,
-      delta,
-      level: delta === null ? null : climateLevel(delta),
-    };
+/**
+ * 最近 days 天（到昨天为止；昨天还没有今年的数据时往前挪一天）。
+ * thisYear：今年的实际天气，键是日期；lastYear：去年同一天，键是今年的日期。
+ */
+export function pastSeries(
+  today: string,
+  thisYear: Record<string, PastDay> | null | undefined,
+  lastYear: Record<string, PastDay> | null | undefined,
+  days: number,
+): ClimateSeriesPoint[] {
+  const yesterday = shiftDate(today, -1);
+  const end = thisYear?.[yesterday] || !thisYear?.[shiftDate(today, -2)] ? yesterday : shiftDate(today, -2);
+  return Array.from({ length: days }, (_, i) => {
+    const date = shiftDate(end, i - days + 1);
+    const maxTemp = thisYear?.[date]?.maxTemp ?? null;
+    const lastMaxTemp = lastYear?.[date]?.maxTemp ?? null;
+    const delta = maxTemp !== null && lastMaxTemp !== null ? round1(maxTemp - lastMaxTemp) : null;
+    return { date, maxTemp, lastMaxTemp, delta, level: delta === null ? null : climateLevel(delta) };
   });
 }
 
+function shiftDate(date: string, n: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400_000).toISOString().slice(0, 10);
+}
+
 // ---------------------------------------------------------------------------
-// 降水对比：去年这些天里下雨（雪）的天数 vs 今年预报
+// 降水对比：同样这几天，今年和去年各有几天下雨（雪）
 // ---------------------------------------------------------------------------
 
 export interface RainComparison {
-  /** 统计的天数（两边都有数据的天数，通常 15） */
+  /** 统计的天数（两边都有数据的天数，通常 7） */
   days: number;
-  /** 去年同期这些天里下雨（雪）的天数 */
   lastYearRainyDays: number;
-  /** 预报中降水概率 ≥ 50% 的天数 */
-  forecastRainyDays: number;
+  thisYearRainyDays: number;
 }
 
-export function rainComparison(daily: DailyPoint[], lastYear: Record<string, PastDay> | null | undefined): RainComparison | null {
-  if (!lastYear) return null;
-  const both = daily.filter((d) => lastYear[d.date]?.wet != null && d.precipProb !== null);
+export function rainComparison(
+  dates: string[],
+  thisYear: Record<string, PastDay> | null | undefined,
+  lastYear: Record<string, PastDay> | null | undefined,
+): RainComparison | null {
+  if (!thisYear || !lastYear) return null;
+  const both = dates.filter((d) => thisYear[d]?.wet != null && lastYear[d]?.wet != null);
   // 一半以上的天数缺数据时不比
-  if (both.length === 0 || both.length < daily.length / 2) return null;
+  if (both.length === 0 || both.length < dates.length / 2) return null;
   return {
     days: both.length,
-    lastYearRainyDays: both.filter((d) => lastYear[d.date]!.wet).length,
-    forecastRainyDays: both.filter((d) => (d.precipProb ?? 0) >= CLIMATE.rainyDayProbAtLeast).length,
+    lastYearRainyDays: both.filter((d) => lastYear[d]!.wet).length,
+    thisYearRainyDays: both.filter((d) => thisYear[d]!.wet).length,
   };
 }
 

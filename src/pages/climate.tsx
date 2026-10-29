@@ -1,4 +1,5 @@
 import type { Child } from 'hono/jsx';
+import { raw } from 'hono/html';
 import type { Channel } from '../config/channels';
 import { CLIMATE_LEVEL_COLORS, GUESS } from '../config/features';
 import { guessButtonKey, type ClimateSeriesPoint, type GuessChoice } from '../features/climate';
@@ -64,14 +65,13 @@ function Thermometer(props: { lang: Lang; lastMin: number | null; lastMax: numbe
 }
 
 /**
- * 未来 15 天：今年预报最高温（实线）和去年同一天的实际最高温（虚线），灰色带是"和去年差不多"的范围（去年 ±2°）。
- * 今天这个点（和通往它的一段线）在猜之前不显示（data-spoil），免得看图就知道答案。
+ * 过去 7 天：今年实际最高温（实线）和去年同一天的实际最高温（虚线），灰色带是"和去年差不多"的范围（去年 ±2°）。
+ * 只有过去的日子（2026-10-29 起）：不含今天和以后，猜之前完整显示也不会透露答案。
  */
 function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
   const pts = props.series.filter((s) => s.maxTemp !== null && s.lastMaxTemp !== null);
   // 数据不够时占同样高度，显示 --
   if (pts.length < 3) return <div class="ph-chart">{DASH}</div>;
-  const todayIncluded = pts[0]!.date === props.series[0]?.date;
   const rtl = textDirection(props.lang) === 'rtl';
   const W = 340;
   const H = 150;
@@ -81,7 +81,7 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
   const lo = Math.floor(Math.min(...vals) - 1);
   const hi = Math.ceil(Math.max(...vals) + 1);
   const x = (i: number) => {
-    const v = 14 + (i / (pts.length - 1)) * (W - 28);
+    const v = 20 + (i / (pts.length - 1)) * (W - 40);
     return rtl ? W - v : v;
   };
   const y = (v: number) => bottom - ((v - lo) / (hi - lo)) * (bottom - top);
@@ -94,36 +94,19 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
       .map(([a, b]) => `L${a.toFixed(1)} ${b.toFixed(1)}`)
       .join(' ') +
     ' Z';
-  const path = (from: number, to: number) =>
-    pts
-      .slice(from, to)
-      .map((s, i) => `${i === 0 ? 'M' : 'L'}${x(from + i).toFixed(1)} ${y(s.maxTemp!).toFixed(1)}`)
-      .join(' ');
-  const last = pts.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(s.lastMaxTemp!).toFixed(1)}`).join(' ');
-  const narrow = new Intl.DateTimeFormat(intlLocale(props.lang), { weekday: 'narrow', timeZone: 'UTC' });
-  const wd = (date: string) => {
+  const line = (pick: (s: ClimateSeriesPoint) => number) => pts.map((s, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(pick(s)).toFixed(1)}`).join(' ');
+  const md = new Intl.DateTimeFormat(intlLocale(props.lang), { month: 'numeric', day: 'numeric', timeZone: 'UTC' });
+  const label = (date: string) => {
     const [yy, m, d] = date.split('-').map(Number) as [number, number, number];
-    return narrow.format(new Date(Date.UTC(yy, m - 1, d, 12)));
+    return md.format(new Date(Date.UTC(yy, m - 1, d, 12)));
   };
-  const extremes = new Set<number>();
-  let iMax = 0;
-  let iMin = 0;
-  pts.forEach((s, i) => {
-    if (s.maxTemp! > pts[iMax]!.maxTemp!) iMax = i;
-    if (s.maxTemp! < pts[iMin]!.maxTemp!) iMin = i;
-  });
-  extremes.add(0).add(iMax).add(iMin);
-  const spoil = (i: number) => (todayIncluded && i === 0 ? { 'data-spoil': '' } : {});
   return (
     <svg class="series" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t(props.lang, 'ClimateChartTitle')}>
       <path d={band} fill="rgba(255,255,255,.16)" />
-      <path d={last} fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.4" stroke-dasharray="3 3" />
-      {/* 今天到明天这一段单独画，猜之前不显示 */}
-      {todayIncluded ? <path d={path(0, 2)} data-spoil fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" /> : null}
-      <path d={path(todayIncluded ? 1 : 0, pts.length)} fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" />
+      <path d={line((s) => s.lastMaxTemp!)} fill="none" stroke="rgba(255,255,255,.55)" stroke-width="1.4" stroke-dasharray="3 3" />
+      <path d={line((s) => s.maxTemp!)} fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" />
       {pts.map((s, i) => (
         <circle
-          {...spoil(i)}
           cx={x(i).toFixed(1)}
           cy={y(s.maxTemp!).toFixed(1)}
           r={s.level && s.level !== 'normal' ? '4.2' : '3'}
@@ -132,18 +115,31 @@ function SeriesChart(props: { series: ClimateSeriesPoint[]; lang: Lang }) {
           stroke-width={s.level && s.level !== 'normal' ? '1.5' : '0'}
         />
       ))}
-      {[...extremes].map((i) => (
-        <text {...spoil(i)} x={x(i).toFixed(1)} y={(y(pts[i]!.maxTemp!) - 8).toFixed(1)} text-anchor="middle" font-size="13" font-weight="600" fill="#fff">
-          <tspan data-c={String(pts[i]!.maxTemp)}>{Math.round(pts[i]!.maxTemp!)}</tspan>°
+      {pts.map((s, i) => (
+        <text x={x(i).toFixed(1)} y={(y(s.maxTemp!) - 8).toFixed(1)} text-anchor="middle" font-size="12" font-weight="600" fill="#fff">
+          <tspan data-c={String(s.maxTemp)}>{Math.round(s.maxTemp!)}</tspan>°
         </text>
       ))}
       {pts.map((s, i) => (
-        <text x={x(i).toFixed(1)} y="145" text-anchor="middle" font-size="13" fill="rgba(255,255,255,.65)">
-          {wd(s.date)}
+        <text x={x(i).toFixed(1)} y="145" text-anchor="middle" font-size="12" fill="rgba(255,255,255,.65)">
+          {label(s.date)}
         </text>
       ))}
     </svg>
   );
+}
+
+/**
+ * 猜之前的"已连续猜对 N 天"，首次绘制前填上（规则同 client/lib/streak.ts currentStreak：最后记录是今天或昨天时还连着）。
+ * 已经猜过今天的不显示（结果卡片里有）。
+ */
+function STREAK_PRE_SCRIPT(city: string, date: string): string {
+  const c = JSON.stringify(city);
+  const d = JSON.stringify(date);
+  return `(function(){try{var e=document.currentScript.previousElementSibling;if(JSON.parse(localStorage.getItem('weather.guess.v2')||'{}')[${c}+'|'+${d}])return;
+var b=JSON.parse(localStorage.getItem('weather.streak.v1')||'{}')[${c}];if(!b)return;var p=new Date(Date.parse(${d}+'T00:00:00Z')-864e5).toISOString().slice(0,10);
+var n=(b.last===${d}||b.last===p)?b.cur:0;var t=n>0?e.getAttribute('data-tpl-now').split('{n}').join(n):b.best>0?e.getAttribute('data-tpl-best').split('{n}').join(b.best):'';
+if(t){e.textContent=t;e.hidden=false}}catch(x){}})()`;
 }
 
 /** "去年今天：" 后面接天气；中日文全角冒号后不再加空格 */
@@ -187,6 +183,9 @@ export function ClimatePage(p: PageProps) {
           >
             <Sec icon={G.thermo()} title={t(lang, 'GuessTitle')} />
             <p class="q">{t(lang, 'GuessQuestion', { city: loc.name })}</p>
+            {/* 猜之前的连续天数：首次绘制前由下面的脚本填上（不跳动），之后 client/main.ts showPreStreak 再算一次；没猜过的城市不显示 */}
+            <p class="streak pre" data-streak-pre data-tpl-now={t(lang, 'StreakBeforeGuess')} data-tpl-best={t(lang, 'StreakRestart')} hidden />
+            <script>{raw(STREAK_PRE_SCRIPT(loc.id, cmp.date))}</script>
             <div class="choices">
               {CHOICES.map((c) => (
                 <button type="button" data-choice={c} class={`ch ch-${c}`}>
@@ -231,20 +230,20 @@ export function ClimatePage(p: PageProps) {
             </div>
           </section>
           <noscript>
-            <style>{'[data-reveal]{display:block!important}.guess .choices{display:none}.spoiler-pending [data-spoil]{visibility:visible!important}'}</style>
+            <style>{'[data-reveal]{display:block!important}.guess .choices{display:none}'}</style>
           </noscript>
         </>
       )}
 
       <AdSlot slot="climate_1" lang={lang} />
 
-      <section class="card spoiler-pending" data-spoiler>
+      <section class="card">
         <Sec icon={G.calendar()} title={t(lang, 'ClimateChartTitle')} />
         <SeriesChart series={features.series} lang={lang} />
         <div class="legend">
           <span>
             <i class="sw line" />
-            {t(lang, 'ClimateForecastHigh')}
+            {t(lang, 'ClimateThisYearHigh')}
           </span>
           <span>
             <i class="sw dash" />
@@ -266,12 +265,12 @@ export function ClimatePage(p: PageProps) {
             <b>{rain ? rain.lastYearRainyDays : DASH}</b>
           </div>
           <div>
-            <span>{t(lang, 'ClimateRainForecast')}</span>
-            {rain ? <i style={`width:${((rain.forecastRainyDays / rain.days) * 100).toFixed(1)}%`} /> : <i class="ph" />}
-            <b>{rain ? rain.forecastRainyDays : DASH}</b>
+            <span>{t(lang, 'ClimateRainThisYear')}</span>
+            {rain ? <i style={`width:${((rain.thisYearRainyDays / rain.days) * 100).toFixed(1)}%`} /> : <i class="ph" />}
+            <b>{rain ? rain.thisYearRainyDays : DASH}</b>
           </div>
         </div>
-        <p class="note">{rain ? t(lang, 'ClimateRainCompare', { last: rain.lastYearRainyDays, days: rain.days, forecast: rain.forecastRainyDays }) : DASH}</p>
+        <p class="note">{rain ? t(lang, 'ClimateRainPast', { days: rain.days, now: rain.thisYearRainyDays, last: rain.lastYearRainyDays }) : DASH}</p>
       </section>
 
       <AdSlot slot="climate_2" lang={lang} />

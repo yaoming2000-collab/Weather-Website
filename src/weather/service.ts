@@ -14,7 +14,7 @@ import { intlLocale, isLang } from '../i18n/languages';
 import { WIKIDATA_LANGS, type AreaSearchSource, type PlaceNamesSource, type WikiPlace } from './wikidata';
 import { isoOfCountry } from '../geo/countries';
 import { normalizeSearch, searchLongEnough } from './search';
-import { historyBlockStart, lastYearDate, type PastDay, type PastWeatherSource } from './history';
+import { HISTORY_BLOCK_DAYS, historyBlockStart, lastYearDate, type PastDay, type PastWeatherSource } from './history';
 import { HISTORY_MAX_ATTEMPTS, type HistoryQueue } from './historyQueue';
 
 export { normalizeSearch, searchLongEnough };
@@ -449,88 +449,100 @@ export class WeatherService {
   }
 
   /**
-   * 去年同一天的实际天气，按今年的日期返回（今年 2 月 29 日对去年 2 月 28 日）。
-   * 按 10 天一块向 OpenWeather 取（一次请求 10 天），每块永久缓存：同一城市大约每 10 天才新请求一次。
-   * 数据源很慢（OpenWeather 40 多秒）且有待取队列时：只读缓存，缺的块放进队列，由定时任务去取，
-   * 这几天先算"正在准备"（pending）。
-   * 某一块取不到时，那几天没有数据（页面显示 "--"），其余照常。
+   * 过去某些天的实际天气（OpenWeather），按日期返回。"和去年比"要两部分（2026-10-29 起）：
+   * 去年同一天（今天的题）、过去 7 天今年和去年同期（往年对比页的图和降雨，只用过去的日子，不泄漏以后的题）。
+   * - 按 10 天一块取（一次请求 10 天），日期全球对齐，同一块大家共用
+   * - 全是两天以前的块：永久缓存；含昨天、今天的块：到当地午夜 2 小时后过期，由定时任务更新（每个城市每天约 1 次）
+   * - 只用取的时候已经过完的日子（取的时刻往前推 1 小时的当地日期之前），避免把预报当成实际
+   * - 数据源很慢（OpenWeather 40 多秒）且有待取队列时：只读缓存，缺的块放进队列，由定时任务去取（pending）；
+   *   过期的块照常先用，同时排队更新
+   * - 某一块取不到时那几天没有数据（页面显示 "--"），其余照常
    */
-  async lastYear(
+  async pastDays(
     location: WeatherLocation,
     dates: string[],
   ): Promise<Fetched<Record<string, PastDay>> & { partial?: boolean; pending?: boolean; pendingDates?: string[] }> {
     const source = this.history;
     if (!source || dates.length === 0) return { data: {}, fetchedAt: this.now() };
-    const wanted = dates.map((d) => ({ date: d, past: lastYearDate(d) }));
-    const blocks = [...new Set(wanted.map((w) => historyBlockStart(w.past)))];
+    const tz = location.timezone;
+    const blocks = [...new Set(dates.map((d) => historyBlockStart(d)))];
     const queue = source.slow ? this.historyQueue : undefined;
+    const freshUntil = (start: string) => (fetchedAt: number) => historyFreshUntil(start, tz, fetchedAt);
     const results = await Promise.allSettled(
       blocks.map((start) => {
         const key = historyKey(source.name, location.id, start);
         return queue
-          ? this.cachedOrQueued<PastDay[]>(key, queue, { cityId: location.id, lat: location.lat, lon: location.lon, start })
-          : this.cached(key, DATA_TTL.lastYear, () => source.days(location.lat, location.lon, start));
+          ? this.cachedOrQueued<PastDay[]>(key, queue, { cityId: location.id, lat: location.lat, lon: location.lon, start, tz })
+          : this.cached(key, DATA_TTL.lastYear, () => source.days(location.lat, location.lon, start), { freshUntil: freshUntil(start) });
       }),
     );
-    const byPast = new Map<string, PastDay>();
+    const byDate = new Map<string, PastDay>();
     let fetchedAt = this.now();
     const failures: unknown[] = [];
     const pendingBlocks = new Set<string>();
     results.forEach((r, i) => {
       if (r.status === 'fulfilled') {
         fetchedAt = Math.min(fetchedAt, r.value.fetchedAt);
-        for (const d of r.value.data) byPast.set(d.date, d);
+        // 取的时候还没过完的日子（今天、以后）是预报，不用
+        const doneBefore = localDate(r.value.fetchedAt - 3600_000, tz);
+        for (const d of r.value.data) if (d.date < doneBefore) byDate.set(d.date, d);
       } else {
         failures.push(r.reason);
         if (statusOf(r.reason) === PENDING) pendingBlocks.add(blocks[i]!);
       }
     });
-    const pending = failures.some((e) => statusOf(e) === PENDING);
+    const pending = pendingBlocks.size > 0;
     // 全部失败（而且不是在排队）时报错（页面记为"缺数据"，只缓存 1 分钟）；部分失败时用拿到的
-    if (byPast.size === 0 && failures.length && !pending) throw failures[0];
+    if (byDate.size === 0 && failures.length && !pending) throw failures[0];
     const data: Record<string, PastDay> = {};
-    for (const w of wanted) {
-      const d = byPast.get(w.past);
-      if (d) data[w.date] = d;
+    for (const d of dates) {
+      const day = byDate.get(d);
+      if (day) data[d] = day;
     }
     // 有一块取不到（不是"没有这份数据"、也不是在排队）：页面要知道，只短暂缓存
     const partial = failures.some((e) => {
       const st = statusOf(e);
       return st !== PENDING && !isAbsent(st);
     });
-    // 哪些天在等（页面据此决定"正在准备"还是"没有数据"）
-    const pendingDates = wanted.filter((w) => pendingBlocks.has(historyBlockStart(w.past))).map((w) => w.date);
+    const pendingDates = dates.filter((d) => pendingBlocks.has(historyBlockStart(d)));
     return { data, fetchedAt, partial, pending, pendingDates };
   }
 
   /**
-   * 只读缓存；没有时放进待取队列，报"正在准备"（PENDING）。
-   * 定时任务记下的"没有这份数据"（404，写在全球）照常报 404，页面显示 "--"、不出题。
+   * 只读缓存；没有时放进待取队列，报"正在准备"（PENDING）；过期的照常返回，同时放进队列更新。
+   * 定时任务记下的"没有这份数据"（404，写在全球）、密钥问题（401/403）照常报错，页面显示 "--"、不出题。
    */
   private async cachedOrQueued<T>(key: string, queue: HistoryQueue, job: Parameters<HistoryQueue['add']>[0]): Promise<Fetched<T>> {
-    const hit = await this.store.get<T>(key);
-    if (hit) return { data: hit.value, fetchedAt: hit.fetchedAt };
     const now = this.now();
-    const failed = await this.store.get<FailureMark>(`${key}:fail`);
-    // 定时任务写在全球的标记：没有这份数据、放弃了（都记 404）、密钥问题（401/403）→ 不再排队，今天不出题
-    if (failed && now < (failed.freshUntil ?? 0) && isAbsent(failed.value.status)) throw new ProviderError(`no data: ${key}`, failed.value.status ?? 404);
-    const last = this.queuedAt.get(key);
-    if (last === undefined || now - last > REQUEUE_AFTER_MS) {
-      this.queuedAt.set(key, now);
-      await queue.add(job).catch((err) => {
-        this.queuedAt.delete(key);
-        this.log(`[weather] cannot queue ${key}: ${(err as Error).message}`);
-      });
+    const hit = await this.store.get<T>(key);
+    if (hit) {
+      if (now >= (hit.freshUntil ?? Infinity)) await this.enqueue(key, queue, job, now);
+      return { data: hit.value, fetchedAt: hit.fetchedAt };
     }
+    const failed = await this.store.get<FailureMark>(`${key}:fail`);
+    if (failed && now < (failed.freshUntil ?? 0) && isAbsent(failed.value.status)) throw new ProviderError(`no data: ${key}`, failed.value.status ?? 404);
+    await this.enqueue(key, queue, job, now);
     throw new ProviderError(`queued: ${key}`, PENDING);
   }
 
+  /** 放进队列（同一实例里 REQUEUE_AFTER_MS 内只放一次）；失败不影响页面 */
+  private async enqueue(key: string, queue: HistoryQueue, job: Parameters<HistoryQueue['add']>[0], now: number): Promise<void> {
+    const last = this.queuedAt.get(key);
+    if (last !== undefined && now - last <= REQUEUE_AFTER_MS) return;
+    this.queuedAt.set(key, now);
+    await queue.add(job).catch((err) => {
+      this.queuedAt.delete(key);
+      this.log(`[weather] cannot queue ${key}: ${(err as Error).message}`);
+    });
+  }
+
   /**
-   * 定时任务：把队列里的去年数据取回来，存进缓存（KV，所有机房共用）。
+   * 定时任务：把队列里的天气历史取回来，存进缓存（KV，所有机房共用）。
+   * - 缓存里已经有、而且没过期：直接删掉任务
    * - 同时最多 concurrency 个请求（Workers 同时只能开 6 个连接，写缓存也占连接，留余量）
    * - 过了 stopAt 不再开始新的请求（避免和下一次定时任务重叠）
-   * - 没有这份数据（404）：删掉任务（失败标记由 cached() 写在全球，页面不再排队）
-   * - 密钥或套餐问题（401/403）、限流（429）：后面的任务也会一样失败，这次到此为止；401/403 在全球记 1 小时，页面期间不排队
+   * - 没有这份数据（404）：删掉任务，在全球记 1 天，页面期间不再排队
+   * - 密钥或套餐问题（401/403）、限流（429）：后面的任务也会一样失败，这次到此为止，任务留着；401/403 在全球记 1 小时
    * - 其他失败：下次再试；试满 HISTORY_MAX_ATTEMPTS 次后在全球记"放弃"（GIVE_UP_SECONDS），页面期间不再排队、不出题
    */
   async drainHistoryQueue(
@@ -553,13 +565,18 @@ export class WeatherService {
       while (!halted && next < jobs.length && Date.now() < stopAt) {
         const job = jobs[next++]!;
         const key = historyKey(source.name, job.cityId, job.start);
+        const tz = job.tz ?? 'UTC';
         try {
-          await this.cached(key, DATA_TTL.lastYear, () => source.days(job.lat, job.lon, job.start));
+          const existing = await this.store.get<PastDay[]>(key);
+          if (!existing || this.now() >= (existing.freshUntil ?? Infinity)) {
+            await this.refresh(key, DATA_TTL.lastYear, () => source.days(job.lat, job.lon, job.start), (at) => historyFreshUntil(job.start, tz, at));
+          }
           await queue.done(job);
           stats.fetched++;
         } catch (err) {
           const status = statusOf(err);
           if (status === 404) {
+            await this.rememberFailure(key, err, false);
             await queue.done(job).catch(() => undefined);
             stats.dropped++;
             continue;
@@ -615,21 +632,39 @@ export class WeatherService {
       return this.optional(what, id, withBudget(p, Math.max(300, deadline - Date.now())), missing);
     };
 
-    // 去年同一天：今天起 15 天（和 15 天对比图一致）
-    const window = Array.from({ length: FORECAST_PERIODS.daily }, (_, i) => addDays(today, i));
-    const [current, hourly, daily, air, lastYear] = await Promise.all([
+    // 天气历史：今天的题（去年今天）+ 过去 8 天今年和去年同期（往年对比页显示最近 7 天；昨天的数据还没更新时往前挪一天）
+    const recent = Array.from({ length: PAST_DAYS + 1 }, (_, i) => addDays(today, i - PAST_DAYS - 1));
+    const lastYearOf = new Map([...recent, today].map((d) => [d, lastYearDate(d)] as const));
+    const [current, hourly, daily, air, history] = await Promise.all([
       this.current(id),
       opt('hourly', this.hourly(id)),
       opt('daily', this.daily(id, location.timezone)),
       opt('air', this.airQuality(id)),
-      opt('lastYear', this.lastYear(location, window)),
+      opt('lastYear', this.pastDays(location, [...new Set([...recent, ...lastYearOf.values()])])),
     ]);
 
     const hours = hourly ? { ...hourly, data: fromCurrentHour(hourly.data, now) } : null;
-    const ly = lastYear as { partial?: boolean; pending?: boolean } | null;
-    if (ly?.partial && !missing.includes('lastYear')) missing.push('lastYear');
-    // 去年数据正在准备（排队等定时任务）：页面只短暂缓存，取到后尽快显示；今天不出题，连续猜对不算断
-    if (ly?.pending) missing.push('lastYearPending');
+    const hist = history as (Fetched<Record<string, PastDay>> & { partial?: boolean; pending?: boolean; pendingDates?: string[] }) | null;
+    if (hist?.partial && !missing.includes('lastYear')) missing.push('lastYear');
+    // 数据正在准备（排队等定时任务）：页面只短暂缓存，取到后尽快显示；今天不出题时连续猜对不算断
+    if (hist?.pending) missing.push('lastYearPending');
+    const pendingSet = new Set(hist?.pendingDates ?? []);
+    // 按今年的日期排：去年同一天
+    const lastYear = hist
+      ? {
+          data: Object.fromEntries([...lastYearOf].flatMap(([d, ly]) => (hist.data[ly] ? [[d, hist.data[ly]!]] : []))),
+          fetchedAt: hist.fetchedAt,
+          pendingDates: [...lastYearOf].filter(([, ly]) => pendingSet.has(ly)).map(([d]) => d),
+        }
+      : null;
+    // 今年过去几天的实际天气
+    const pastWeek = hist
+      ? {
+          data: Object.fromEntries(recent.flatMap((d) => (hist.data[d] ? [[d, hist.data[d]!]] : []))),
+          fetchedAt: hist.fetchedAt,
+          pendingDates: recent.filter((d) => pendingSet.has(d)),
+        }
+      : null;
 
     // 降雨时间轴：只在可能下雨时才请求（需求文档"降雨时间轴"）
     let nowcast: Fetched<NowcastPoint[]> | null = null;
@@ -646,6 +681,7 @@ export class WeatherService {
       daily: daily ? { ...daily, data: daily.data.filter((d) => d.date >= today) } : null,
       air: air ? { ...air, data: fromCurrentHour(air.data, now) } : null,
       lastYear,
+      pastWeek,
       nowcast,
       radar,
       missing,
@@ -669,6 +705,20 @@ export class WeatherService {
 }
 
 const SEARCH_TTL = 24 * 3600;
+/** 往年对比页的天数：过去 7 天（Darren 2026-10-29） */
+export const PAST_DAYS = 7;
+
+/**
+ * 天气历史一块的新鲜期：最后一天在两天以前 → 永久（DATA_TTL.lastYear）；
+ * 否则到当地下一个午夜后 2 小时（那时昨天已经过完，OpenWeather 也有了），由定时任务更新。
+ */
+export function historyFreshUntil(start: string, tz: string, fetchedAt: number): number {
+  const lastDay = addDays(start, HISTORY_BLOCK_DAYS - 1);
+  const today = localDate(fetchedAt, tz);
+  if (lastDay <= addDays(today, -2)) return fetchedAt + DATA_TTL.lastYear * 1000;
+  return nextLocalMidnight(fetchedAt, tz) + 2 * 3600_000;
+}
+
 /** "正在准备"：放进待取队列，等定时任务 */
 const PENDING = 202;
 /** 同一实例里，放进队列后多久才再放一次（防止队列里的任务被放弃后一直不再排队） */
@@ -723,6 +773,8 @@ export interface CityBundle {
   air: Fetched<AirQualityPoint[]> | null;
   /** 去年同一天的实际天气，键是今年的日期；没取到时为 null */
   lastYear: (Fetched<Record<string, PastDay>> & { pendingDates?: string[] }) | null;
+  /** 今年过去 8 天的实际天气（键是日期，到昨天为止）；没取到时为 null。往年对比页取最近 7 天 */
+  pastWeek: (Fetched<Record<string, PastDay>> & { pendingDates?: string[] }) | null;
   nowcast: Fetched<NowcastPoint[]> | null;
   radar: boolean;
   /** 这次没取到的非必需数据（限流、超时等临时原因）。不为空时页面只缓存 1 分钟。 */

@@ -170,11 +170,13 @@ body{--cl:255,255,255}
 .place h1{display:flex;align-items:center;gap:6px;margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
 .place h1 span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .place h1 svg{flex:none;width:18px;height:18px;opacity:.9}
-/* 城市主页：城市名放大，地区放在城市名右下（和城市名底部对齐）；放不下时换到下一行 */
-.city-head{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;row-gap:0}
-.city-head h1{font-size:28px;line-height:1.15;min-width:0;max-width:100%}
-.city-head h1 svg{width:20px;height:20px;align-self:center}
-.city-head .region{margin:0;font-size:15px;max-width:100%}
+/* 城市主页：第一行城市名（固定 28px，太长时换行、不缩小）；第二行左边地区、右边按钮，底部对齐 */
+.city-top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "region btns";align-items:end;column-gap:10px;row-gap:2px;padding-top:4px}
+.city-name{grid-area:name;display:flex;align-items:center;gap:6px;margin:0;font-size:28px;font-weight:650;letter-spacing:-.01em;line-height:1.2;min-width:0}
+.city-name span{min-width:0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.city-name svg{flex:none;width:20px;height:20px;opacity:.9}
+.city-top .region{grid-area:region;margin:0;padding-bottom:4px;padding-inline-start:26px;font-size:15px;line-height:1.3;min-width:0}
+.top-btns{grid-area:btns;display:flex;gap:8px}
 .region{margin-top:1px;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .region.wrap{white-space:normal;overflow:visible}
 .btn{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:44px;height:44px;padding:0 11px;border-radius:999px;border:0;
@@ -200,7 +202,7 @@ body{--cl:255,255,255}
 [dir=rtl] .flip{transform:scaleX(-1)}
 
 /* 明天、后天、一周 */
-.jump{display:flex;gap:8px;margin:6px -16px 0;padding:2px 16px;overflow-x:auto;scrollbar-width:none}
+.jump{display:flex;gap:8px;margin:14px -16px 0;padding:2px 16px;overflow-x:auto;scrollbar-width:none}
 .jump::-webkit-scrollbar{display:none}
 .jump a{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 14px;border-radius:999px;background:var(--chip);
   font-size:14px;white-space:nowrap}
@@ -339,10 +341,10 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .sw.usual{background:rgba(255,255,255,.3)}.sw.lo{background:#9bd4ff}.sw.line{height:2px;border-radius:1px}
 .sw.dash{height:0;border-radius:0;background:none;border-top:2px dashed rgba(255,255,255,.6)}
 /* 往年对比页：猜之前不显示 15 天对比图里"今天"的点 */
-.spoiler-pending [data-spoil]{visibility:hidden}
 .ly-day{display:flex;align-items:center;gap:8px;margin:10px 0 0;font-size:14px;color:var(--mut)}
 .ly-day b{color:var(--fg);font-weight:600}
 .streak{margin:6px 0 0;font-size:14px;font-weight:600;color:#ffd36b}
+.streak.pre{margin:2px 0 12px}
 .streak .bump{display:inline-block;animation:bump .6s var(--ease)}
 @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
 @media (prefers-reduced-motion:reduce){.streak .bump{animation:none}}

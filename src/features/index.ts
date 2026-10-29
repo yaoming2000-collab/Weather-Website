@@ -1,9 +1,9 @@
-import type { CityBundle } from '../weather/service';
+import { PAST_DAYS, type CityBundle } from '../weather/service';
 import type { DailyPoint } from '../weather/types';
 import { nextLocalMidnight } from '../time/cityTime';
 import {
   climateLabel,
-  climateSeries,
+  pastSeries,
   compareToday,
   rainComparison,
   type ClimateLabel,
@@ -24,9 +24,9 @@ export interface CityFeatures {
   comparison: TodayComparison | null;
   /** 首页标签 */
   label: ClimateLabel | null;
-  /** 15 天对比图 */
+  /** 过去 7 天：今年实际 vs 去年同期（只有过去的日子，猜之前也可以完整显示） */
   series: ClimateSeriesPoint[];
-  /** "去年这 15 天里 X 天下雨，今年预计 Y 天" */
+  /** 同样这 7 天：今年 X 天下雨，去年 Y 天 */
   rain: RainComparison | null;
   /** 降雨时间轴；晴天（没有请求逐 15 分钟数据）为 null */
   nowcast: NowcastSummary | null;
@@ -42,12 +42,17 @@ export function cityFeatures(bundle: CityBundle, nowMs: number): CityFeatures {
   const fromToday = todayPoint ? daily.slice(daily.indexOf(todayPoint)) : daily;
 
   const comparison = compareToday(todayPoint, lastYear?.[bundle.today]);
-  const series = climateSeries(fromToday, lastYear);
+  const thisYear = bundle.pastWeek?.data ?? null;
+  const series = pastSeries(bundle.today, thisYear, lastYear, PAST_DAYS);
   return {
     comparison,
     label: climateLabel(comparison),
     series,
-    rain: rainComparison(fromToday, lastYear),
+    rain: rainComparison(
+      series.map((p) => p.date),
+      thisYear,
+      lastYear,
+    ),
     nowcast: summarizeNowcast(bundle.nowcast?.data, bundle.radar, nowMs),
     life: lifeIndices({
       current: bundle.current.data,
@@ -60,20 +65,24 @@ export function cityFeatures(bundle: CityBundle, nowMs: number): CityFeatures {
   };
 }
 
-/** 排行榜要记录的一行；没有今天的对比时为 null */
-export function anomalyRecord(bundle: CityBundle, comparison: TodayComparison | null, nowMs: number): AnomalyRecord | null {
-  if (!comparison) return null;
+/**
+ * 排行榜要记录的一行：昨天（今年实际 vs 去年同一天）；没有昨天的数据时为 null。
+ * 排行榜改成"昨天"（2026-10-29）：今天的偏差就是今天猜一猜的答案，不能提前给人看。
+ */
+export function anomalyRecord(bundle: CityBundle, series: ClimateSeriesPoint[], nowMs: number): AnomalyRecord | null {
+  const yesterday = series.at(-1);
+  if (!yesterday || yesterday.date >= bundle.today || yesterday.delta === null || yesterday.maxTemp === null || yesterday.lastMaxTemp === null) return null;
   return {
     cityId: bundle.location.id,
     name: bundle.location.name,
     country: bundle.location.country,
-    date: comparison.date,
-    deltaMax: comparison.deltaMax,
-    maxTemp: comparison.maxTemp,
-    avgMaxTemp: comparison.lastMaxTemp,
-    level: comparison.level,
+    date: yesterday.date,
+    deltaMax: yesterday.delta,
+    maxTemp: yesterday.maxTemp,
+    avgMaxTemp: yesterday.lastMaxTemp,
+    level: yesterday.level ?? 'normal',
     updatedAt: nowMs,
-    // 排行榜只算城市当地的"今天"：过了当地午夜就不上榜，等有人再访问时写入新的一天
+    // 只在城市当地的今天上榜（记的是这座城市的"昨天"）：过了当地午夜就不上榜，等有人再访问时写入新的一天
     validUntil: nextLocalMidnight(nowMs, bundle.location.timezone),
   };
 }
@@ -81,12 +90,8 @@ export function anomalyRecord(bundle: CityBundle, comparison: TodayComparison | 
 /**
  * 用当天定下来的对比结果（见 FeatureStore.freezeComparison）替换刚算出来的：
  * 今天的预报一天里会更新，答案中途翻转会让"连续猜对"不公平，所以每个城市每天以第一次算出的为准。
- * 15 天对比图的第一个点（今天）也换成同一个数，和标签一致。
  */
 export function withFrozenComparison(features: CityFeatures, frozen: TodayComparison | null): CityFeatures {
   if (!frozen || (features.comparison && frozen.date !== features.comparison.date)) return features;
-  const series = features.series.map((p) =>
-    p.date === frozen.date ? { ...p, maxTemp: frozen.maxTemp, lastMaxTemp: frozen.lastMaxTemp, delta: frozen.deltaMax, level: frozen.level } : p,
-  );
-  return { ...features, comparison: frozen, label: climateLabel(frozen), series };
+  return { ...features, comparison: frozen, label: climateLabel(frozen) };
 }

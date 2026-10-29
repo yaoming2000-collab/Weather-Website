@@ -151,15 +151,18 @@ describe('WeatherService caching', () => {
     const bundle = await service.cityBundle('104686017');
     expect(bundle.today).toBe('2026-10-21');
     expect(bundle.lastYear?.data['2026-10-21']?.date).toBe('2025-10-21');
-    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(15);
-    // 15 天跨 2–3 个 10 天块
+    // 去年：今天 + 过去 8 天；今年：过去 8 天（到昨天）
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(9);
+    expect(Object.keys(bundle.pastWeek!.data)).toEqual(Array.from({ length: 8 }, (_, i) => `2026-10-${13 + i}`));
+    // 今年、去年各 1–2 个 10 天块
     const first = calls.history!;
     expect(first).toBeGreaterThanOrEqual(2);
-    expect(first).toBeLessThanOrEqual(3);
-    // 过去的数据不会变：一天后再打开，最多多取一块
+    expect(first).toBeLessThanOrEqual(4);
+    // 一天后再打开：只更新含最近几天的块，两天以前的块和去年的不再取
     advance(86400);
-    await service.cityBundle('104686017');
-    expect(calls.history! - first).toBeLessThanOrEqual(1);
+    const next = await service.cityBundle('104686017');
+    expect(calls.history! - first).toBeLessThanOrEqual(2);
+    expect(next.pastWeek!.data['2026-10-21']?.date).toBe('2026-10-21');
     // 有一块临时取不到：记为缺数据（页面只缓存 1 分钟）
     // Foreca 的往年平均不再请求
     expect(calls.climateDay ?? 0).toBe(0);
@@ -478,7 +481,8 @@ describe('last year via the prefetch queue (OpenWeather is too slow for pages)',
     expect(queue.jobs.size).toBe(0);
     const bundle = await make().cityBundle('102643743');
     expect(bundle.missing).not.toContain('lastYearPending');
-    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(15);
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(9);
+    expect(Object.keys(bundle.pastWeek!.data)).toHaveLength(8);
     expect(calls.length).toBe(queued);
   });
 
@@ -536,9 +540,9 @@ describe('last year via the prefetch queue (OpenWeather is too slow for pages)',
   it('says "being prepared" only for the days whose block is queued', async () => {
     const { make } = setup();
     const svc = make();
-    const ly = await svc.lastYear({ id: '102643743', name: 'London', adminArea: null, country: 'GB', timezone: 'Europe/London', lat: 51.5, lon: -0.12 }, ['2026-10-22', '2026-10-23']);
+    const ly = await svc.pastDays({ id: '102643743', name: 'London', adminArea: null, country: 'GB', timezone: 'Europe/London', lat: 51.5, lon: -0.12 }, ['2025-10-22', '2025-10-23']);
     expect(ly.pending).toBe(true);
-    expect(ly.pendingDates).toEqual(['2026-10-22', '2026-10-23']);
+    expect(ly.pendingDates).toEqual(['2025-10-22', '2025-10-23']);
   });
 
   it('stops starting new requests after the deadline', async () => {
@@ -555,7 +559,7 @@ describe('last year via the prefetch queue (OpenWeather is too slow for pages)',
     const svc = new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, undefined, history);
     const bundle = await svc.cityBundle('102643743');
     expect(calls.length).toBeGreaterThanOrEqual(2);
-    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(15);
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(9);
   });
 });
 
@@ -599,5 +603,41 @@ describe('KV history queue', () => {
     const kv = fakeKv();
     kv.map.set('q:ly:x:2025-10-20', { value: '1', metadata: { cityId: 'x' } });
     expect(await new KvHistoryQueue(kv as unknown as KVNamespace).take(10)).toEqual([]);
+  });
+});
+
+describe('past days of this year (Darren 2026-10-29: past 7 days instead of the next 15)', () => {
+  it('uses only days that were over when fetched, and refreshes the recent block after local midnight', async () => {
+    let now = Date.UTC(2026, 9, 22, 3); // 伦敦 10-22 04:00
+    const calls: string[] = [];
+    const history: PastWeatherSource = { name: 'owm', slow: true, days: async (lat, lon, start) => (calls.push(start), new MockHistory().days(lat, lon, start)) };
+    const queue = new MemoryHistoryQueue();
+    const store = new MemoryStore(() => now);
+    const make = () => new WeatherService(new MockProvider(() => now), store, () => now, () => undefined, 0, undefined, undefined, history, undefined, queue);
+
+    await make().cityBundle('102643743');
+    await make().drainHistoryQueue();
+    let b = await make().cityBundle('102643743');
+    expect(b.missing).not.toContain('lastYearPending');
+    // 今天（10-22）还没过完：即使数据源给了，也不当作实际
+    expect(Object.keys(b.pastWeek!.data).at(-1)).toBe('2026-10-21');
+    expect(b.pastWeek!.data['2026-10-22']).toBeUndefined();
+    expect(queue.jobs.size).toBe(0);
+
+    // 第二天当地 04:00：含昨天的块过期 → 先用旧的（到 10-21），同时排队更新；不算"正在准备"
+    now += 86400_000;
+    const before = calls.length;
+    b = await make().cityBundle('102643743');
+    expect(b.missing).not.toContain('lastYearPending');
+    expect(Object.keys(b.pastWeek!.data).at(-1)).toBe('2026-10-21');
+    expect(queue.jobs.size).toBeGreaterThanOrEqual(1);
+    expect([...queue.jobs.values()].every((j) => j.tz === 'Europe/London')).toBe(true);
+    await make().drainHistoryQueue();
+    expect(calls.length - before).toBeGreaterThanOrEqual(1);
+    expect(queue.jobs.size).toBe(0);
+    b = await make().cityBundle('102643743');
+    expect(b.pastWeek!.data['2026-10-22']?.date).toBe('2026-10-22');
+    // 去年的块没有重新取
+    expect(calls.slice(before).every((s) => s.startsWith('2026-'))).toBe(true);
   });
 });

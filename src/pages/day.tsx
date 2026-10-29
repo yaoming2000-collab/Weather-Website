@@ -55,7 +55,6 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
   const loc = bundle.location;
   const sub = p.offset === 1 ? 'tomorrow' : 'day-after';
   const title = p.offset === 1 ? t(lang, 'TomorrowLabel') : weekdayLabel(d?.date ?? bundle.today, intlLocale(lang), 'long');
-  const point = features.series[p.offset];
   const realHours = (bundle.hourly?.data ?? []).filter((h) => d && h.time.startsWith(d.date));
   // 逐小时预报覆盖不到这一天时用占位小时，区块不消失
   const hours = realHours.length > 0 || !d ? realHours : placeholderDayHours(d.date, loc.timezone);
@@ -82,10 +81,10 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
               <span class="sep">/</span>
               <Temp c={d.minTemp} />
             </p>
-            {/* 明天、后天只显示去年同一天的最高温，不说"热/冷"：不提前透露那天的猜一猜答案，也不会出现"去年今天"的错误说法 */}
+            {/* 明天、后天不显示去年那天的温度（那是以后的题的答案，Darren 2026-10-29），只引导去猜今天 */}
             <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style="--lv:var(--faint)">
               <i />
-              <span>{point?.lastMaxTemp != null ? rich(lang, 'DayLastYearHigh', { temp: <Temp c={point.lastMaxTemp} /> }) : <>{t(lang, 'ClimateTitle')} {DASH}</>}</span>
+              <span>{t(lang, 'ClimateTeaser')}</span>
               {G.chevron('flip')}
             </a>
           </section>

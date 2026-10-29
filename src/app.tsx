@@ -494,7 +494,7 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
     const features = withFrozenComparison(computed, frozen);
     // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
     // 排行榜存英文名（显示时再按页面语言换），所以用原始的地点信息
-    const record = anomalyRecord(raw, features.comparison, now);
+    const record = anomalyRecord(raw, features.series, now);
     if (record) waitUntil(c, c.var.features.recordAnomaly(record).catch((e) => console.warn('[ranking] record failed', e)));
     // 页面显示用：缺的逐小时、每日预报、生活指数补占位（显示 "--"），区块不隐藏
     const view = withPlaceholders(bundle, features, now);

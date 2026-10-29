@@ -99,7 +99,7 @@ describe('city page', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('<meta name="robots" content="noindex"/>');
-    expect(html).toMatch(/<h1>.*?<span>Cheney<\/span><\/h1>/s);
+    expect(html).toMatch(/<h1 class="city-name">.*?<span>Cheney<\/span><\/h1>/s);
     expect(html).toContain('"tz":"America/Chicago"');
     // 15 天预报：城市当地日期从 10 月 21 日开始（UTC 03:00 时美国中部还是 21 日）
     expect(html).toContain('data-date="2026-10-21"');
@@ -393,7 +393,8 @@ describe('step 3 pages', () => {
 
     const climate = await (await a.request(req('/wmi/en/w/102643743/climate'))).text();
     expect(climate).toContain('Please try again in a few minutes');
-    expect(climate).toContain('class="ph-chart"');
+    // 过去 7 天只用历史数据，今年的预报缺了也照常显示
+    expect(climate).toContain('class="series"');
     expect(climate).toContain('data-slot="climate_1"');
 
     const life = await (await a.request(req('/wmi/en/w/102643743/life/running'))).text();
@@ -607,5 +608,32 @@ describe('last year being prepared', () => {
     expect(queue.jobs.size).toBeGreaterThanOrEqual(2);
     const home = await (await a.request(req('/wmi/zh/w/102643743'))).text();
     expect(home).toContain('data-no-question');
+  });
+});
+
+describe('no spoilers for today or later questions (Darren 2026-10-29)', () => {
+  it('the climate page compares the past 7 days only and shows them before guessing', async () => {
+    const html = await (await app().request(req('/wmi/en/w/102643743/climate'))).text();
+    expect(html).toContain('Past 7 days vs. last year');
+    expect(html).not.toContain('data-spoil');
+    expect(html).not.toContain('spoiler-pending');
+    // 图上的日期都在今天（10-22）之前，最后一天是昨天
+    const labels = [...html.matchAll(/fill="rgba\(255,255,255,.65\)">([^<]+)</g)].map((m) => m[1]);
+    expect(labels).toHaveLength(7);
+    expect(labels.at(-1)).toBe('10/21');
+    expect(html).toContain('data-streak-pre');
+  });
+
+  it('tomorrow and the day after no longer show last year’s temperature', async () => {
+    for (const sub of ['tomorrow', 'day-after']) {
+      const html = await (await app().request(req(`/wmi/en/w/102643743/${sub}`))).text();
+      expect(html).not.toContain('Same day last year');
+      expect(html).toContain('/wmi/en/w/102643743/climate');
+    }
+  });
+
+  it('the ranking is about yesterday', async () => {
+    const html = await (await app().request(req('/wmi/en/ranking'))).text();
+    expect(html).toContain('Yesterday');
   });
 });

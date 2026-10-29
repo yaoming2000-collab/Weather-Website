@@ -576,8 +576,6 @@ function setupGuess() {
     for (const b of $$<HTMLButtonElement>('[data-choice]', box)) b.setAttribute('aria-pressed', String(b.dataset.choice === choice));
     if (resultEl) resultEl.textContent = s(choice === answer ? 'GuessRight' : 'GuessWrong');
     reveal.classList.add('on');
-    // 15 天对比图里"今天"那个点，猜完再显示
-    for (const x of $$('.spoiler-pending')) x.classList.remove('spoiler-pending');
     if (animate) {
       // 只有当场猜的才计入连续天数（同一天重复打开不会重复计）
       const book = readStreaks(storage.get(STREAK_KEY));
@@ -586,6 +584,17 @@ function setupGuess() {
     }
     showStreak(animate, choice === answer);
     if (animate) reveal.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+  };
+
+  // 猜之前也显示连续天数，鼓励接着猜（Darren 2026-10-29）
+  const preEl = box.querySelector<HTMLElement>('[data-streak-pre]');
+  const showPreStreak = () => {
+    if (!preEl) return;
+    const st = readStreaks(storage.get(STREAK_KEY))[city];
+    const n = currentStreak(st, date);
+    const best = st?.best ?? 0;
+    preEl.textContent = n > 0 ? s('StreakBeforeGuess', { n }) : best > 0 ? s('StreakRestart', { n: best }) : '';
+    preEl.hidden = !preEl.textContent;
   };
 
   const previous = readBook(storage.get(GUESS_KEY))[key]?.v;
@@ -598,10 +607,12 @@ function setupGuess() {
     return;
   }
 
+  showPreStreak();
   for (const b of $$<HTMLButtonElement>('[data-choice]', box)) {
     b.addEventListener('click', async () => {
       const choice = b.dataset.choice;
       if (!isChoice(choice) || box.hasAttribute('data-done')) return;
+      if (preEl) preEl.hidden = true;
       storage.set(GUESS_KEY, JSON.stringify(writeBook(readBook(storage.get(GUESS_KEY)), key, choice, Date.now())));
       open(choice, true);
       try {

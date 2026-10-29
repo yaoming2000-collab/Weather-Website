@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answerOf, climateLabel, climateLevel, climateSeries, climateTone, compareToday, rainComparison, wordingKey } from '../src/features/climate';
+import { answerOf, climateLabel, climateLevel, climateTone, compareToday, pastSeries, rainComparison, wordingKey } from '../src/features/climate';
 import { withFrozenComparison } from '../src/features';
 import { cleanDays, historyBlockStart, iconOfWeatherId, lastYearDate, type PastDay } from '../src/weather/history';
 import type { DailyPoint } from '../src/weather/types';
@@ -80,31 +80,43 @@ describe('today vs the same day last year', () => {
   });
 });
 
-describe('15-day comparison', () => {
-  it('pairs each day with the same day last year', () => {
-    const ds = dates('2026-10-22', 3);
-    const ly: Record<string, PastDay> = { [ds[0]!]: past('2025-10-22', 20), [ds[2]!]: past('2025-10-24', 10) };
-    const s = climateSeries(ds.map((d) => day(d, 18)), ly);
-    expect(s.map((p) => p.delta)).toEqual([-2, null, 8]);
-    expect(s.map((p) => p.level)).toEqual(['cooler', null, 'much-warmer']);
+describe('past 7 days: this year vs last year', () => {
+  const thisYear = (ds: string[], t: (i: number) => number | null) => Object.fromEntries(ds.map((d, i) => [d, past(d, t(i))]));
+
+  it('ends yesterday and pairs each day with the same day last year (never today or later)', () => {
+    const ds = dates('2026-10-15', 7); // 10-15 … 10-21
+    const now = thisYear(ds, () => 18);
+    const ly: Record<string, PastDay> = { [ds[6]!]: past('2025-10-21', 20), [ds[0]!]: past('2025-10-15', 10) };
+    const s = pastSeries('2026-10-22', now, ly, 7);
+    expect(s.map((p) => p.date)).toEqual(ds);
+    expect(s[0]!.delta).toBe(8);
+    expect(s[6]!.delta).toBe(-2);
+    expect(s[6]!.level).toBe('cooler');
+    expect(s[3]!.delta).toBeNull();
+  });
+
+  it('moves back a day while yesterday is not in yet', () => {
+    const ds = dates('2026-10-14', 7); // 到 10-20，10-21 还没有
+    const s = pastSeries('2026-10-22', thisYear(ds, () => 18), {}, 7);
+    expect(s.at(-1)!.date).toBe('2026-10-20');
+    // 两天都没有（例如还在准备）：仍然按昨天排，显示 "--"
+    expect(pastSeries('2026-10-22', {}, {}, 7).at(-1)!.date).toBe('2026-10-21');
   });
 });
 
 describe('rain comparison', () => {
-  it('counts rainy days last year against rainy days in the forecast', () => {
-    const ds = dates('2026-10-22', 10);
+  it('counts rainy days this year and last year over the same days', () => {
+    const ds = dates('2026-10-15', 7);
+    const now = Object.fromEntries(ds.map((d, i) => [d, past(d, 20, i < 2)]));
     const ly = Object.fromEntries(ds.map((d, i) => [d, past(d, 20, i < 4)]));
-    const r = rainComparison(
-      ds.map((d, i) => day(d, 20, { precipProb: i < 2 ? 80 : 10 })),
-      ly,
-    )!;
-    expect(r).toEqual({ days: 10, lastYearRainyDays: 4, forecastRainyDays: 2 });
+    expect(rainComparison(ds, now, ly)).toEqual({ days: 7, lastYearRainyDays: 4, thisYearRainyDays: 2 });
   });
 
   it('gives up when most days have no data', () => {
-    const ds = dates('2026-10-22', 10);
+    const ds = dates('2026-10-15', 7);
     const ly = { [ds[0]!]: past(ds[0]!, 20, true) };
-    expect(rainComparison(ds.map((d) => day(d, 20)), ly)).toBeNull();
+    expect(rainComparison(ds, ly, ly)).toBeNull();
+    expect(rainComparison(ds, null, ly)).toBeNull();
   });
 });
 
@@ -115,19 +127,13 @@ describe('home label and frozen answer', () => {
     expect(climateLabel(c)).toEqual({ mode: 'temperature', comparison: c });
   });
 
-  it('uses the answer fixed earlier in the day, also for today on the chart', () => {
-    const ds = dates('2026-10-22', 2);
-    const ly = Object.fromEntries(ds.map((d) => [d, past(d, 15)]));
-    const now = compareToday(day(ds[0]!, 16), ly[ds[0]!])!;
-    const morning = compareToday(day(ds[0]!, 19), ly[ds[0]!])!;
-    const f = withFrozenComparison(
-      { comparison: now, label: climateLabel(now), series: climateSeries(ds.map((d) => day(d, 16)), ly), rain: null, nowcast: null, life: [], days: [] },
-      morning,
-    );
+  it('uses the answer fixed earlier in the day', () => {
+    const ly = past('2025-10-22', 15);
+    const now = compareToday(day('2026-10-22', 16), ly)!;
+    const morning = compareToday(day('2026-10-22', 19), ly)!;
+    const f = withFrozenComparison({ comparison: now, label: climateLabel(now), series: [], rain: null, nowcast: null, life: [], days: [] }, morning);
     expect(f.comparison!.answer).toBe('warmer');
     expect(f.label!.comparison.deltaMax).toBe(4);
-    expect(f.series[0]!.delta).toBe(4);
-    expect(f.series[1]!.delta).toBe(1);
   });
 });
 

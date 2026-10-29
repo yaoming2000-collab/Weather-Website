@@ -167,6 +167,12 @@ export class MockHistory implements PastWeatherSource {
 function hash(s: string): number {
   let h = 2166136261;
   for (const ch of s) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  // 再打散一次：只差一个字符（例如年份）的日期也要得到差别明显的数
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
   return (h >>> 0) / 2 ** 32;
 }
 
