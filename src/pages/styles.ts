@@ -170,8 +170,9 @@ body{--cl:255,255,255}
 .place h1{display:flex;align-items:center;gap:6px;margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
 .place h1 span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .place h1 svg{flex:none;width:18px;height:18px;opacity:.9}
-/* 城市主页：第一行城市名（固定 28px，太长时换行、不缩小）；第二行左边地区、右边按钮，底部对齐 */
-.city-top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "region btns";align-items:end;column-gap:10px;row-gap:2px;padding-top:4px}
+/* 城市主页：第一行城市名（固定 28px，太长时换行、不缩小）；第二行左边地区、右边按钮，底部对齐。
+   第二行有按钮的高度（44px），城市名下面会空出一截；顶部多留 15px，让城市名在上下两段空白之间居中 */
+.city-top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name name" "region btns";align-items:end;column-gap:10px;row-gap:2px;padding-top:15px}
 .city-name{grid-area:name;display:flex;align-items:center;gap:6px;margin:0;font-size:28px;font-weight:650;letter-spacing:-.01em;line-height:1.2;min-width:0}
 .city-name span{min-width:0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .city-name svg{flex:none;width:20px;height:20px;opacity:.9}
