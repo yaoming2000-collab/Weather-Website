@@ -81,14 +81,7 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
               <span class="sep">/</span>
               <Temp c={d.minTemp} />
             </p>
-            {/* 明天、后天不显示去年那天的温度（那是以后的题的答案，Darren 2026-10-29），只引导去猜今天 */}
-            <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style="--lv:var(--faint)">
-              <i />
-              <span class="mq" data-marquee>
-                <span class="mq-in">{t(lang, 'ClimateTeaser')}</span>
-              </span>
-              {G.chevron('flip')}
-            </a>
+            {/* 明天、后天页不放"和去年比"（猜一猜只在今天，Darren 2026-10-29） */}
           </section>
           <EarlyUnits />
 

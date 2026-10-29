@@ -310,7 +310,7 @@
   "ClimateRainLastYear": "Anno scorso",
   "ClimateRainThisYear": "Quest'anno",
   "ClimateRainPast": "In questi {days} giorni ha piovuto o nevicato {now} giorni quest'anno e {last} giorni l'anno scorso.",
-  "ClimateTeaser": "Ti ricordi il meteo di questo giorno l'anno scorso? Indovina",
+  "ClimateTeaser": "Ricordi un anno fa oggi? Indovina",
   "StreakCurrent": "{n} giorni di fila indovinati",
   "StreakBest": "record: {n} giorni",
   "StreakBroken": "Serie interrotta",
