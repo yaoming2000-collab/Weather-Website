@@ -191,6 +191,16 @@ describe('OpenWeather replies', () => {
     await expect(new OpenWeatherHistory('k', reply(0, '2025-10-28', 400)).days(1, 2, '2025-10-28')).rejects.toMatchObject({ status: 404 });
   });
 
+  it('accepts fewer than 10 days for a block that runs into the future, if it reaches the present', async () => {
+    const { OpenWeatherHistory } = await import('../src/weather/history');
+    const now = () => Date.UTC(2026, 9, 29, 6);
+    // 10-27 起的块：到 10-29（今天）就停了
+    const days = await new OpenWeatherHistory('k', reply(3, '2026-10-27'), 1000, now).days(1, 2, '2026-10-27');
+    expect(days).toHaveLength(3);
+    // 没到现在的短回复仍然拒绝
+    await expect(new OpenWeatherHistory('k', reply(1, '2026-10-20'), 1000, now).days(1, 2, '2026-10-20')).rejects.toMatchObject({ status: 502 });
+  });
+
   it('uses the answer fixed earlier when today cannot be computed now', () => {
     const c = compareToday(day('2026-10-22', 20), past('2025-10-22', 15))!;
     const f = withFrozenComparison({ comparison: null, label: null, series: [], rain: null, nowcast: null, life: [], days: [] }, c);

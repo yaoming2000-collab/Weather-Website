@@ -5,6 +5,7 @@ import {
   hourLabel,
   localDate,
   monthDayOf,
+  nextLocalMidnight,
   offsetMinutes,
   toLocalIso,
   weekdayLabel,
@@ -46,5 +47,15 @@ describe('city time', () => {
     const times = ['2026-10-22T10:00+08:00', '2026-10-22T11:00+08:00', '2026-10-22T12:00+08:00'];
     expect(currentHourIndex(times, t + 20 * 60_000)).toBe(1);
     expect(currentHourIndex(times, Date.UTC(2026, 9, 23))).toBe(-1);
+  });
+});
+
+describe('next local midnight', () => {
+  it('is right on days the clocks change', () => {
+    // 伦敦 2026-10-25 凌晨 2 点拨回 1 点（BST → GMT）：下一个午夜是 10-26 00:00 GMT
+    expect(nextLocalMidnight(Date.UTC(2026, 9, 24, 23, 30), 'Europe/London')).toBe(Date.UTC(2026, 9, 26, 0));
+    // 纽约 2026-03-08 凌晨拨快一小时：下一个午夜是 03-09 00:00 EDT = 04:00Z
+    expect(nextLocalMidnight(Date.UTC(2026, 2, 8, 6), 'America/New_York')).toBe(Date.UTC(2026, 2, 9, 4));
+    expect(nextLocalMidnight(Date.UTC(2026, 9, 22, 3), 'Asia/Shanghai')).toBe(Date.UTC(2026, 9, 22, 16));
   });
 });

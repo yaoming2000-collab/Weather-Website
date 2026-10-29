@@ -3,7 +3,7 @@ import { MemoryStore, TieredStore } from '../src/cache/store';
 import { DATA_TTL, FAILURE_TTL, MAX_STALE_SECONDS, OPTIONAL_DATA_BUDGET_MS } from '../src/config/thresholds';
 import { MockProvider } from '../src/weather/mock';
 import { ProviderError } from '../src/weather/provider';
-import { fromCurrentHour, searchLongEnough, shouldFetchNowcast, WeatherService } from '../src/weather/service';
+import { fromCurrentHour, historyFreshUntil, searchLongEnough, shouldFetchNowcast, WeatherService } from '../src/weather/service';
 import { MockHistory, type PastWeatherSource } from '../src/weather/history';
 import { HISTORY_MAX_ATTEMPTS, KvHistoryQueue, MemoryHistoryQueue } from '../src/weather/historyQueue';
 import type { CacheStore } from '../src/cache/store';
@@ -639,5 +639,53 @@ describe('past days of this year (Darren 2026-10-29: past 7 days instead of the 
     expect(b.pastWeek!.data['2026-10-22']?.date).toBe('2026-10-22');
     // 去年的块没有重新取
     expect(calls.slice(before).every((s) => s.startsWith('2026-'))).toBe(true);
+  });
+});
+
+describe('when recent history expires', () => {
+  const tz = 'Europe/London';
+  it('expires the block holding recent days 2 hours after local midnight, never sooner than the day is over', () => {
+    // 10-22 10:00 BST 取的：明天 02:00 BST 过期
+    expect(historyFreshUntil('2026-10-20', tz, Date.UTC(2026, 9, 22, 9))).toBe(Date.UTC(2026, 9, 23, 1));
+    // 10-22 00:30 BST 取的（昨天还没齐）：今天 02:00 BST 就过期
+    expect(historyFreshUntil('2026-10-20', tz, Date.UTC(2026, 9, 21, 23, 30))).toBe(Date.UTC(2026, 9, 22, 1));
+    // 两天以前就结束的块：永久
+    expect(historyFreshUntil('2026-10-10', tz, Date.UTC(2026, 9, 22, 9)) - Date.UTC(2026, 9, 22, 9)).toBe(DATA_TTL.lastYear * 1000);
+    // UTC+14、UTC−11
+    expect(historyFreshUntil('2026-10-20', 'Pacific/Kiritimati', Date.UTC(2026, 9, 22, 9))).toBe(Date.UTC(2026, 9, 22, 12)); // 当地 10-22 23:00 → 10-23 02:00
+    expect(historyFreshUntil('2026-10-20', 'Pacific/Pago_Pago', Date.UTC(2026, 9, 22, 9))).toBe(Date.UTC(2026, 9, 22, 13)); // 当地 10-21 22:00 → 10-22 02:00
+  });
+
+  it('keeps the expired block a few days for cities nobody opened that night, and stops queuing after the job gave up', async () => {
+    let now = Date.UTC(2026, 9, 22, 3);
+    let failing = false;
+    const history: PastWeatherSource = {
+      name: 'owm',
+      slow: true,
+      days: async (lat, lon, start) => {
+        if (failing) throw new ProviderError('busy', 503);
+        return new MockHistory().days(lat, lon, start);
+      },
+    };
+    const queue = new MemoryHistoryQueue();
+    const store = new MemoryStore(() => now);
+    const make = () => new WeatherService(new MockProvider(() => now), store, () => now, () => undefined, 0, undefined, undefined, history, undefined, queue);
+    await make().cityBundle('102643743');
+    await make().drainHistoryQueue();
+
+    // 第二天 10:00 才有人打开（过期 8 小时后）：旧数据还在，不算"正在准备"
+    now = Date.UTC(2026, 9, 23, 9);
+    const b = await make().cityBundle('102643743');
+    expect(b.missing).not.toContain('lastYearPending');
+    expect(Object.keys(b.pastWeek!.data).length).toBeGreaterThanOrEqual(7);
+    expect(queue.jobs.size).toBeGreaterThanOrEqual(1);
+
+    // 更新一直失败，试满次数后放弃：之后打开页面也不再放回队列
+    failing = true;
+    for (let i = 0; i < HISTORY_MAX_ATTEMPTS; i++) await make().drainHistoryQueue();
+    expect(queue.jobs.size).toBe(0);
+    const adds = queue.adds;
+    await make().cityBundle('102643743');
+    expect(queue.adds).toBe(adds);
   });
 });

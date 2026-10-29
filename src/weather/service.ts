@@ -119,7 +119,7 @@ export class WeatherService {
     key: string,
     ttlSeconds: number,
     fetcher: () => Promise<T>,
-    options: { freshUntil?: (fetchedAt: number) => number } = {},
+    options: { freshUntil?: (fetchedAt: number) => number; keepStaleSeconds?: number } = {},
   ): Promise<Fetched<T>> {
     const existing = await this.store.get<T>(key);
     const now = this.now();
@@ -146,7 +146,7 @@ export class WeatherService {
     }
 
     try {
-      return ok(await this.refresh(key, ttlSeconds, fetcher, options.freshUntil));
+      return ok(await this.refresh(key, ttlSeconds, fetcher, options.freshUntil, options.keepStaleSeconds));
     } catch (err) {
       await this.rememberFailure(key, err, usable(existing));
       if (usable(existing) && statusOf(err) !== 404) {
@@ -167,7 +167,14 @@ export class WeatherService {
     return windowMs * this.stagger;
   }
 
-  private refresh<T>(key: string, ttlSeconds: number, fetcher: () => Promise<T>, freshFn?: (fetchedAt: number) => number): Promise<CacheEntry<T>> {
+  private refresh<T>(
+    key: string,
+    ttlSeconds: number,
+    fetcher: () => Promise<T>,
+    freshFn?: (fetchedAt: number) => number,
+    /** 过期后共享层（KV）还保留多久，供兜底 */
+    keepStaleSeconds: number = MAX_STALE_SECONDS,
+  ): Promise<CacheEntry<T>> {
     let pending = this.inflight.get(key) as Promise<CacheEntry<T>> | undefined;
     if (!pending) {
       // 只统计向天气供应商的请求（键以 v1:<供应商>: 开头），排行榜等数据库查询不算
@@ -186,7 +193,7 @@ export class WeatherService {
         const fetchedAt = this.now();
         const freshUntil = Math.min(fetchedAt + ttlSeconds * 1000, freshFn?.(fetchedAt) ?? Infinity);
         const entry: CacheEntry<T> = { value, fetchedAt, freshUntil };
-        await this.store.put(key, entry, (freshUntil - fetchedAt) / 1000 + MAX_STALE_SECONDS);
+        await this.store.put(key, entry, (freshUntil - fetchedAt) / 1000 + keepStaleSeconds);
         return entry;
       })();
       this.inflight.set(key, pending as Promise<CacheEntry<unknown>>);
@@ -473,7 +480,7 @@ export class WeatherService {
         const key = historyKey(source.name, location.id, start);
         return queue
           ? this.cachedOrQueued<PastDay[]>(key, queue, { cityId: location.id, lat: location.lat, lon: location.lon, start, tz })
-          : this.cached(key, DATA_TTL.lastYear, () => source.days(location.lat, location.lon, start), { freshUntil: freshUntil(start) });
+          : this.cached(key, DATA_TTL.lastYear, () => source.days(location.lat, location.lon, start), { freshUntil: freshUntil(start), keepStaleSeconds: HISTORY_KEEP_STALE_SECONDS });
       }),
     );
     const byDate = new Map<string, PastDay>();
@@ -483,8 +490,8 @@ export class WeatherService {
     results.forEach((r, i) => {
       if (r.status === 'fulfilled') {
         fetchedAt = Math.min(fetchedAt, r.value.fetchedAt);
-        // 取的时候还没过完的日子（今天、以后）是预报，不用
-        const doneBefore = localDate(r.value.fetchedAt - 3600_000, tz);
+        // 取的时候还没过完的日子（今天、以后）是预报，不用；午夜后 2 小时内取的，昨天也还不算
+        const doneBefore = localDate(r.value.fetchedAt - HISTORY_SETTLE_MS, tz);
         for (const d of r.value.data) if (d.date < doneBefore) byDate.set(d.date, d);
       } else {
         failures.push(r.reason);
@@ -515,12 +522,15 @@ export class WeatherService {
   private async cachedOrQueued<T>(key: string, queue: HistoryQueue, job: Parameters<HistoryQueue['add']>[0]): Promise<Fetched<T>> {
     const now = this.now();
     const hit = await this.store.get<T>(key);
+    const stale = !!hit && now >= (hit.freshUntil ?? Infinity);
+    // 定时任务记下的"没有、放弃了、密钥问题"：期间不再排队（过期的旧数据照常用）
+    const failed = !hit || stale ? await this.store.get<FailureMark>(`${key}:fail`) : null;
+    const blocked = !!failed && now < (failed.freshUntil ?? 0) && isAbsent(failed.value.status);
     if (hit) {
-      if (now >= (hit.freshUntil ?? Infinity)) await this.enqueue(key, queue, job, now);
+      if (stale && !blocked) await this.enqueue(key, queue, job, now);
       return { data: hit.value, fetchedAt: hit.fetchedAt };
     }
-    const failed = await this.store.get<FailureMark>(`${key}:fail`);
-    if (failed && now < (failed.freshUntil ?? 0) && isAbsent(failed.value.status)) throw new ProviderError(`no data: ${key}`, failed.value.status ?? 404);
+    if (blocked) throw new ProviderError(`no data: ${key}`, failed!.value.status ?? 404);
     await this.enqueue(key, queue, job, now);
     throw new ProviderError(`queued: ${key}`, PENDING);
   }
@@ -569,7 +579,7 @@ export class WeatherService {
         try {
           const existing = await this.store.get<PastDay[]>(key);
           if (!existing || this.now() >= (existing.freshUntil ?? Infinity)) {
-            await this.refresh(key, DATA_TTL.lastYear, () => source.days(job.lat, job.lon, job.start), (at) => historyFreshUntil(job.start, tz, at));
+            await this.refresh(key, DATA_TTL.lastYear, () => source.days(job.lat, job.lon, job.start), (at) => historyFreshUntil(job.start, tz, at), HISTORY_KEEP_STALE_SECONDS);
           }
           await queue.done(job);
           stats.fetched++;
@@ -714,10 +724,16 @@ export const PAST_DAYS = 7;
  */
 export function historyFreshUntil(start: string, tz: string, fetchedAt: number): number {
   const lastDay = addDays(start, HISTORY_BLOCK_DAYS - 1);
-  const today = localDate(fetchedAt, tz);
-  if (lastDay <= addDays(today, -2)) return fetchedAt + DATA_TTL.lastYear * 1000;
-  return nextLocalMidnight(fetchedAt, tz) + 2 * 3600_000;
+  // 当地午夜后 2 小时内取的算前一天取的（那时昨天的数据可能还不全）：到今天 02:00 就过期
+  const settled = fetchedAt - HISTORY_SETTLE_MS;
+  if (lastDay <= addDays(localDate(settled, tz), -2)) return fetchedAt + DATA_TTL.lastYear * 1000;
+  return nextLocalMidnight(settled, tz) + HISTORY_SETTLE_MS;
 }
+
+/** 当地午夜后多久，昨天的数据才算齐 */
+const HISTORY_SETTLE_MS = 2 * 3600_000;
+/** 含最近几天的块过期后，KV 里再留 3 天：不常有人看的城市第二天打开，先用旧的、排队更新，不至于整块消失 */
+const HISTORY_KEEP_STALE_SECONDS = 3 * 86400;
 
 /** "正在准备"：放进待取队列，等定时任务 */
 const PENDING = 202;

@@ -637,3 +637,14 @@ describe('no spoilers for today or later questions (Darren 2026-10-29)', () => {
     expect(html).toContain('Yesterday');
   });
 });
+
+describe('ranking records only the real yesterday', () => {
+  it('skips a series that had to move back a day', async () => {
+    const { anomalyRecord } = await import('../src/features');
+    const loc = { id: '1', name: 'X', adminArea: null, country: 'GB', timezone: 'Europe/London', lat: 0, lon: 0 };
+    const bundle = { location: loc, today: '2026-10-22' } as unknown as Parameters<typeof anomalyRecord>[0];
+    const point = (date: string) => ({ date, maxTemp: 12, lastMaxTemp: 9, delta: 3, level: 'warmer' as const });
+    expect(anomalyRecord(bundle, [point('2026-10-21')], NOW)?.date).toBe('2026-10-21');
+    expect(anomalyRecord(bundle, [point('2026-10-20')], NOW)).toBeNull();
+  });
+});

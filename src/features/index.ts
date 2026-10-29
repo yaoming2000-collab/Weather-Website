@@ -1,4 +1,4 @@
-import { PAST_DAYS, type CityBundle } from '../weather/service';
+import { addDays, PAST_DAYS, type CityBundle } from '../weather/service';
 import type { DailyPoint } from '../weather/types';
 import { nextLocalMidnight } from '../time/cityTime';
 import {
@@ -71,7 +71,8 @@ export function cityFeatures(bundle: CityBundle, nowMs: number): CityFeatures {
  */
 export function anomalyRecord(bundle: CityBundle, series: ClimateSeriesPoint[], nowMs: number): AnomalyRecord | null {
   const yesterday = series.at(-1);
-  if (!yesterday || yesterday.date >= bundle.today || yesterday.delta === null || yesterday.maxTemp === null || yesterday.lastMaxTemp === null) return null;
+  // 只记真正的昨天（图往前挪了一天时不记，免得"昨天"榜上出现前天）
+  if (!yesterday || yesterday.date !== addDays(bundle.today, -1) || yesterday.delta === null || yesterday.maxTemp === null || yesterday.lastMaxTemp === null) return null;
   return {
     cityId: bundle.location.id,
     name: bundle.location.name,

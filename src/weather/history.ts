@@ -50,6 +50,7 @@ export class OpenWeatherHistory implements PastWeatherSource {
     private readonly key: string,
     private readonly fetcher: typeof fetch = (...a) => fetch(...a),
     private readonly timeoutMs: number = OWM_TIMEOUT_MS,
+    private readonly now: () => number = () => Date.now(),
   ) {}
 
   async days(lat: number, lon: number, startDate: string): Promise<PastDay[]> {
@@ -71,8 +72,10 @@ export class OpenWeatherHistory implements PastWeatherSource {
       throw new ProviderError('OpenWeather returned invalid JSON', res.status);
     }
     const days = cleanDays((body.data ?? []).map(mapDay).filter((d): d is PastDay => d !== null));
-    // 回复不完整（缺天、日期对不上）时不要缓存（否则这几天会显示 "--" 一年多），当作临时故障
-    if (days.length < HISTORY_BLOCK_DAYS || days[0]!.date !== startDate) {
+    // 回复不完整（缺天、日期对不上）时不要缓存（否则这几天会显示 "--" 一年多），当作临时故障。
+    // 含今天的块（今年最近几天）往后是未来：少给几天没关系，只要到了昨天（取的时候按 UTC 算，宽松一天）
+    const reachesPresent = days.length > 0 && days.at(-1)!.date >= new Date(this.now() - 2 * 86400_000).toISOString().slice(0, 10);
+    if (days[0]?.date !== startDate || (days.length < HISTORY_BLOCK_DAYS && !reachesPresent)) {
       throw new ProviderError(`OpenWeather returned ${days.length} days from ${days[0]?.date ?? '-'} (wanted ${HISTORY_BLOCK_DAYS} from ${startDate})`, 502);
     }
     return days.slice(0, HISTORY_BLOCK_DAYS);

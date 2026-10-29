@@ -57,11 +57,18 @@ export function localDate(epochMs: number, timeZone: string): string {
   return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
 }
 
-/** 城市当地下一个午夜的时刻（毫秒）。按分钟计算，误差在 1 分钟内。 */
+/** 城市当地下一个午夜的时刻（毫秒）。按分钟计算，误差在 1 分钟内；夏令时切换的日子也对。 */
 export function nextLocalMidnight(epochMs: number, timeZone: string): number {
   const p = localParts(epochMs, timeZone);
   const minutesLeft = 24 * 60 - (p.hour * 60 + p.minute);
-  return Math.floor(epochMs / 60000) * 60000 + minutesLeft * 60000;
+  let guess = Math.floor(epochMs / 60000) * 60000 + minutesLeft * 60000;
+  // 当天拨了时钟（多或少一小时）：按算出的时刻在当地是几点再校正
+  const q = localParts(guess, timeZone);
+  if (q.hour !== 0 || q.minute !== 0) {
+    const off = q.hour >= 12 ? (24 - q.hour) * 60 - q.minute : -(q.hour * 60 + q.minute);
+    guess += off * 60000;
+  }
+  return guess;
 }
 
 /** 城市时区相对 UTC 的分钟数（东八区 = 480）。 */

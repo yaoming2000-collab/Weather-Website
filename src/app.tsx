@@ -568,6 +568,6 @@ async function loadRanking(c: C): Promise<Ranking> {
   const now = c.var.weather.nowMs();
   // 没有数据库时（预览、测试）不缓存，否则同一实例里刚记录的城市要等一小时才出现
   if (!features.persistent) return features.ranking(now);
-  const res = await c.var.weather.cached('v1:ranking', RANKING.cacheSeconds, () => features.ranking(now));
+  const res = await c.var.weather.cached('v2:ranking', RANKING.cacheSeconds, () => features.ranking(now));
   return res.data;
 }
