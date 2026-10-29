@@ -16,15 +16,15 @@ html_handling = "none"
 # 天气数据的全局缓存（第二层缓存）。部署前用 `wrangler kv namespace create WEATHER_KV` 创建，把 id 填到这里。
 [[kv_namespaces]]
 binding = "WEATHER_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "a0300b21fc444a73a0e6e3a045ee9d32"
 
-# 猜一猜计数和排行榜（第 3 步）。部署前：
+# 猜一猜计数和排行榜（第 3 步）。binding 必须叫 DB（代码里用 env.DB，名字不对会静默退回内存）。部署前：
 #   npx wrangler d1 create weather-features                         # 把输出的 database_id 填到这里
 #   npx wrangler d1 migrations apply weather-features --remote      # 建表（migrations/ 目录）
 [[d1_databases]]
 binding = "DB"
 database_name = "weather-features"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "8db7179d-bdb0-4410-844e-64650952b298"
 migrations_dir = "migrations"
 
 # 定时任务：
@@ -75,10 +75,12 @@ simple = { limit = 30, period = 60 }
 [env.preview.version_metadata]
 binding = "CF_VERSION_METADATA"
 
-# 测试环境自己的 KV（绑定不会从上面继承）
+# 测试环境的 KV（绑定不会从上面继承）。
+# 2026-10-29 暂时和正式环境共用同一个（a0300b…）。正式上线前请单独建一个，免得测试数据混进正式缓存和待取队列：
+#   npx wrangler kv namespace create WEATHER_KV --env preview      # 把输出的 id 换到这里
 [[env.preview.kv_namespaces]]
 binding = "WEATHER_KV"
-id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+id = "a0300b21fc444a73a0e6e3a045ee9d32"
 
 # 日志保留在 Cloudflare 控制台（Workers → weather-itsfunmag-preview → Logs），方便查定时任务；免费额度每天 20 万条
 [env.preview.observability]
