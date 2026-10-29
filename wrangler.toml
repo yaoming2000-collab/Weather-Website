@@ -80,6 +80,10 @@ binding = "CF_VERSION_METADATA"
 binding = "WEATHER_KV"
 id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
 
+# 日志保留在 Cloudflare 控制台（Workers → weather-itsfunmag-preview → Logs），方便查定时任务；免费额度每天 20 万条
+[env.preview.observability]
+enabled = true
+
 # 定时任务（写明，和上面一样）
 [env.preview.triggers]
 crons = ["17 3 * * *", "*/10 * * * *"]
