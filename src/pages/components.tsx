@@ -271,7 +271,7 @@ export function TopBar(props: { location: WeatherLocation; channel: Channel; lan
   const { location: loc, lang } = props;
   return (
     <header class="top city-top">
-      {/* 第一行城市名（固定 28px，太长时换行、不缩小）+ 右边按钮；第二行地区，紧贴城市名（Darren 2026-10-29） */}
+      {/* 第一行城市名（固定 32px，太长时换行、不缩小）+ 右边按钮；第二行地区，紧贴城市名（Darren 2026-10-29） */}
       <h1 class="city-name">
         {G.pin()}
         <span>{loc.name}</span>
