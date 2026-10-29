@@ -2,7 +2,17 @@
 
 目的：把新天气站部署到一个测试网址，让大家用手机直接打开、点击、滑动，体验真实的交互效果。
 测试环境地址是 https://weather-next.itsfunmag.com，使用**真实 Foreca 数据**（密钥用 `npx wrangler secret put FORECA_TOKEN --env preview` 设置），不影响线上的 weather.itsfunmag.com。
+去年同一天的天气来自 OpenWeather（密钥用 `npx wrangler secret put OWM_KEY --env preview` 设置；不设置时"和去年比"显示 "--"）。
 （2026-10-28 起这两项已写进仓库的 `wrangler.toml`，不需要再在本地修改。）
+
+**2026-10-29 起测试环境需要一个 KV**（去年数据由每 10 分钟的定时任务取回、存进 KV，页面才看得到）。只需做一次：
+
+```bash
+npx wrangler kv namespace create WEATHER_KV --env preview
+```
+
+把输出里的 `id` 填到 `wrangler.toml` 里 `[[env.preview.kv_namespaces]]` 下面（替换 `REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID`），再部署。
+这个 id 不是密钥，可以提交到仓库。
 
 预计用时：首次 15 分钟左右；之后每次更新 1 分钟。
 
@@ -72,8 +82,9 @@ https://weather-itsfunmag-preview.<你的账号子域名>.workers.dev
 - [ ] 在"我的城市"搜索框输入 `ist`，能搜到伊斯坦布尔（至少输入 3 个字母，中文 2 个字）
 - [ ] 点右上角 °C 能切换成 °F
 - [ ] 把网址里的 `/en/` 改成 `/ar/`，页面变成阿拉伯语、从右到左排列
-- [ ] 点顶部的"明天""7 天"，点温度下方的"比往年……"标签，点生活指数的任意一行，都能进入对应页面
-- [ ] 在往年对比页点一个答案，下面出现揭晓结果；刷新页面后直接显示结果
+- [ ] 点顶部的"明天""7 天"，点温度下方的"今天比去年热还是冷？猜一猜"标签，点生活指数的任意一行，都能进入对应页面
+- [ ] 在往年对比页点一个答案，下面出现揭晓结果和"已连续猜对 N 天"；刷新页面后直接显示结果；回到首页，标签变成结果
+- [ ] 点右上角齿轮进入设置页，能换语言、温度和风速单位
 
 把测试网址发给 Darren 即可。
 
@@ -124,6 +135,7 @@ git stash pop
 | --- | --- |
 | `wrangler login` 后浏览器没有反应 | 换一个浏览器，或把命令行里显示的链接手动复制到浏览器打开 |
 | 部署时报错提到 `KV namespace` 或 `REPLACE_WITH_KV_NAMESPACE_ID` | 忘了加 `--env preview`，加上后重新执行 |
+| 部署时报错提到 `REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID` | 还没创建测试环境的 KV，见页首 |
 | 部署时报错提到 `node` 版本 | 升级到 Node.js 22 |
 | 打开网址显示 "Weather unavailable" | 把截图和网址发给 Claude 排查 |
 

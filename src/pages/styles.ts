@@ -170,28 +170,40 @@ body{--cl:255,255,255}
 .place h1{display:flex;align-items:center;gap:6px;margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
 .place h1 span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .place h1 svg{flex:none;width:18px;height:18px;opacity:.9}
+/* 城市主页：第一行城市名（固定 28px，太长时换行、不缩小）+ 右边按钮，上下居中；第二行地区，紧贴城市名（Darren 2026-10-29，和子页"标题 + 齿轮"同一种结构） */
+.city-top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name btns" "region region";align-items:center;column-gap:10px;row-gap:2px;padding-top:4px}
+.city-name{grid-area:name;display:flex;align-items:center;gap:6px;margin:0;font-size:28px;font-weight:650;letter-spacing:-.01em;line-height:1.2;min-width:0}
+.city-name span{min-width:0;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.city-name svg{flex:none;width:20px;height:20px;opacity:.9}
+.city-top .region{grid-area:region;margin:0;padding-inline-start:26px;font-size:15px;line-height:1.3;min-width:0;
+  white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.top-btns{grid-area:btns;display:flex;gap:8px}
 .region{margin-top:1px;font-size:13px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .region.wrap{white-space:normal;overflow:visible}
 .btn{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:44px;height:44px;padding:0 11px;border-radius:999px;border:0;
   background:var(--chip);font-size:14px;font-weight:600;cursor:pointer;transition:background .2s}
 .btn:active{background:rgba(255,255,255,.28)}
-/* 单位设置面板（点 °C/°F 按钮弹出） */
-.units-pop{position:fixed;inset-inline-end:12px;z-index:60;width:min(300px,calc(100vw - 24px));padding:14px;border-radius:var(--r-md);
-  background:rgba(14,28,58,.94);box-shadow:0 12px 32px rgba(0,0,0,.35);color:var(--fg);display:grid;gap:12px}
-.units-row{display:grid;gap:6px}
-.units-label{font-size:13px;color:var(--mut)}
 .seg{display:flex;gap:4px;padding:3px;border-radius:999px;background:rgba(255,255,255,.1)}
 .seg button{flex:1;min-height:36px;border:0;border-radius:999px;background:transparent;color:inherit;font:inherit;font-size:15px;font-weight:600}
 .seg button[aria-checked="true"]{background:#fff;color:#16305f}
 .seg button:focus-visible{outline:2px solid #ffd36b;outline-offset:1px}
+/* 设置页 */
+.settings .seg{margin:0 0 16px}.settings .seg:last-child{margin-bottom:0}
+.settings .seg button{min-height:44px}
+.langs{display:grid}
+.lang-row{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:0 2px;border-top:1px solid var(--line);font-size:16px}
+.lang-row:first-child{border-top:0}
+.lang-row[aria-current]{font-weight:650}
+.lang-row .tick{color:#ffd36b;font-weight:700}
 .btn svg{width:20px;height:20px}
 .btn[aria-pressed="true"] svg{fill:#ffd36b;stroke:#ffd36b}
 .back{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--mut);padding:12px 0;margin:-12px 0}
-.back svg{width:16px;height:16px}
+.back svg{width:16px;height:16px;flex:none}
+.back span{max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 [dir=rtl] .flip{transform:scaleX(-1)}
 
 /* 明天、后天、一周 */
-.jump{display:flex;gap:8px;margin:6px -16px 0;padding:2px 16px;overflow-x:auto;scrollbar-width:none}
+.jump{display:flex;gap:8px;margin:14px -16px 0;padding:2px 16px;overflow-x:auto;scrollbar-width:none}
 .jump::-webkit-scrollbar{display:none}
 .jump a{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px 0 14px;border-radius:999px;background:var(--chip);
   font-size:14px;white-space:nowrap}
@@ -199,6 +211,7 @@ body{--cl:255,255,255}
 .jump img{width:24px;height:24px}
 .jump .hl{color:var(--mut);font-variant-numeric:tabular-nums}
 .jump .chev{width:14px;height:14px;opacity:.7}
+.jump .wk-ico{display:inline-flex}.jump .wk-ico svg{width:22px;height:22px;opacity:.9}
 
 /* ---------- 当前天气 ---------- */
 .hero{text-align:center;padding:26px 0 18px;text-shadow:0 1px 18px rgba(0,0,0,.12)}
@@ -216,6 +229,13 @@ body{--cl:255,255,255}
   background:rgba(255,255,255,.16)}
 .vs i{width:10px;height:10px;border-radius:50%;background:var(--lv);box-shadow:0 0 0 3px color-mix(in srgb,var(--lv) 35%,transparent)}
 .vs svg{width:14px;height:14px;opacity:.75}
+/* 胶囊里放不下的文字：滚动显示（client/main.ts setupMarquee 量出要滚多远）；"减少动态效果"时用省略号 */
+.vs{max-width:100%}
+.vs .mq{min-width:0;overflow:hidden;white-space:nowrap}
+.vs .mq-in{display:inline-block}
+.vs .mq.run .mq-in{animation:mq var(--mq-time,8s) linear infinite}
+@keyframes mq{0%,18%{transform:translateX(0)}82%,100%{transform:translateX(var(--mq-dist,0))}}
+@media (prefers-reduced-motion:reduce){.vs .mq.run .mq-in{animation:none}.vs .mq{text-overflow:ellipsis}.vs .mq-in{display:inline}}
 /* 标签本身 34px 高，用伪元素把可点区域扩到 44px，不改变布局 */
 .vs{position:relative}.vs::after{content:"";position:absolute;inset:-5px 0}
 
@@ -227,6 +247,8 @@ body{--cl:255,255,255}
 .sec>span{min-width:0;overflow-wrap:anywhere;hyphens:auto}
 .sec .go{margin-inline-start:auto;display:inline-flex;align-items:center;gap:2px;font-weight:500;color:var(--fg);opacity:.92}
 .sec .go svg{width:14px;height:14px}
+/* 标题里的"查看更多"本身是链接时，点按区域扩到 44px 高，不改变布局 */
+.sec a.go{position:relative}.sec a.go::after{content:"";position:absolute;inset:-14px -8px}
 a.card:active,.tile:active{transform:scale(.99)}
 a.card,.tile{transition:transform .15s var(--ease)}
 
@@ -234,6 +256,7 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .nc-msg{font-size:17px;font-weight:550;line-height:1.35}
 .ico-ph{display:inline-block;flex:none;border-radius:50%;background:rgba(255,255,255,.12)}
 .ph-chart{display:grid;place-items:center;aspect-ratio:340/150;margin-top:4px;color:var(--faint);font-size:20px}
+.ph-chart .ph-note{font-size:14px;line-height:1.5;text-align:center;padding:0 12px;color:var(--mut)}
 .cmp-bars i.ph{width:0;min-width:0}
 .nc-bars{display:grid;grid-template-columns:repeat(8,1fr);align-items:end;gap:5px;height:56px;margin:14px 0 6px;padding-bottom:1px;border-bottom:1px solid var(--line)}
 .nc-bars span{display:block;border-radius:5px 5px 2px 2px;background:var(--rain);min-height:3px;opacity:.95}
@@ -325,6 +348,15 @@ a.card,.tile{transition:transform .15s var(--ease)}
 .legend>span{display:inline-flex;align-items:center;gap:6px}
 .sw{display:inline-block;width:14px;height:8px;border-radius:4px;background:#fff}
 .sw.usual{background:rgba(255,255,255,.3)}.sw.lo{background:#9bd4ff}.sw.line{height:2px;border-radius:1px}
+.sw.dash{height:0;border-radius:0;background:none;border-top:2px dashed rgba(255,255,255,.6)}
+/* 往年对比页：猜之前不显示 15 天对比图里"今天"的点 */
+.ly-day{display:flex;align-items:center;gap:8px;margin:10px 0 0;font-size:14px;color:var(--mut)}
+.ly-day b{color:var(--fg);font-weight:600}
+.streak{margin:6px 0 0;font-size:14px;font-weight:600;color:#ffd36b}
+.streak.pre{margin:2px 0 12px}
+.streak .bump{display:inline-block;animation:bump .6s var(--ease)}
+@keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.streak .bump{animation:none}}
 .pill-btn{display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 15px;border:0;border-radius:999px;background:rgba(255,255,255,.16);font-size:14px;font-weight:600;cursor:pointer}
 .pill-btn svg{width:17px;height:17px}
 .pill-btn:active{background:rgba(255,255,255,.28)}
@@ -448,6 +480,11 @@ details.dd .more b{color:var(--fg);font-weight:600}
 .city img{width:40px;height:40px}
 .city .n{flex:1;min-width:0}.city .sub{font-size:12px;color:var(--mut)}.city .n div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .city .v{font-size:24px;font-weight:400}
+.here-card{padding-top:4px;padding-bottom:4px}
+.city.here .here-ico{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:var(--chip)}
+.city.here .here-ico svg{width:22px;height:22px}
+.city.here>a>svg{width:16px;height:16px;opacity:.7;flex:none}
+.city.here .n div{font-weight:600}
 .city button{padding:4px 8px;border:0;background:none;color:var(--mut);font-size:20px;cursor:pointer}
 .empty{padding:16px 0;text-align:center;color:var(--mut)}
 

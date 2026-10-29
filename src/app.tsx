@@ -4,8 +4,9 @@ import { PAGE_STALE_WHILE_REVALIDATE, PAGE_TTL, PARTIAL_PAGE_TTL } from './confi
 import type { Env } from './env';
 import { fallbackCoords, parseCoords, parseLatLonPair, visitorCoords, type Coords } from './geo/visitor';
 import { DROPPED_LANGS, isLang, resolveLanguage, type Lang } from './i18n/languages';
+import { t } from './i18n/t';
 import { HomePage, type PageProps } from './pages/home';
-import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage } from './pages/subpages';
+import { AirPage, CitiesPage, DailyPage, HourlyPage, MessagePage, SettingsPage } from './pages/subpages';
 import { ClimatePage, RankingPage } from './pages/climate';
 import { DayPage, WeekPage } from './pages/day';
 import { LifePage } from './pages/life';
@@ -14,11 +15,14 @@ import { isLifeIndexKey, type LifeIndexKey } from './features/life';
 import { citiesPath, cityPath, pageCacheKey, pickNavParams, withNavParams } from './routing/urls';
 import { RANKING } from './config/features';
 import { GUESS_CHOICES, type GuessChoice } from './features/climate';
-import { anomalyRecord, cityFeatures } from './features';
+import { anomalyRecord, cityFeatures, withFrozenComparison } from './features';
 import { createFeatureStore, totalVotes, type AnomalyRecord, type FeatureStore, type GuessCounts, type Ranking } from './features/store';
 import { localDate } from './time/cityTime';
 import { createWeatherService } from './weather';
-import { isNotFound, NAME_BUDGET_MS, type WeatherService } from './weather/service';
+import { isNotFound, NAME_BUDGET_MS, withBudget, type WeatherService } from './weather/service';
+
+/** 定下当天对比结果时最多等数据库多久 */
+const FREEZE_BUDGET_MS = 800;
 
 type AppEnv = { Bindings: Env; Variables: { weather: WeatherService; features: FeatureStore } };
 type C = Context<AppEnv>;
@@ -74,6 +78,15 @@ export function createApp(
       const target = rest && rest !== '/' ? `/${channel}/en${rest}` : `/${channel}/`;
       return c.redirect(target + url.search, 301);
     }
+    // 用户在设置页选过语言：从站外（锁屏、收藏夹、别人发的链接）打开别的语言的城市页时，换成他选的语言。
+    // 站内点击（同站 Referer）不换，用户可以照常看别的语言。设置页本身不换，否则改不了语言。
+    const preferred = preferredLang(c);
+    const rest = new URL(c.req.url).pathname.replace(/^\/[^/]+\/[^/]+/, '');
+    if (preferred && preferred !== lang && isLang(lang) && normalizeChannel(c.req.param('channel')) && rest.startsWith('/w/') && !sameSiteReferer(c)) {
+      const url = new URL(c.req.url);
+      c.header('Cache-Control', 'no-store');
+      return c.redirect(`/${c.req.param('channel')}/${preferred}${rest}${url.search}`, 302);
+    }
     await next();
   });
 
@@ -104,17 +117,20 @@ export function createApp(
       if (!success) return c.json({ error: 'too many requests' }, 429);
     }
     try {
-      let items = await c.var.weather.search(q, lang);
-      let complete = true;
+      const found = await c.var.weather.searchDetailed(q, lang, (p) => waitUntil(c, p));
+      let items = found.items;
+      let complete = found.complete;
       // Foreca 不支持的语言：搜索结果是英文名，用 Wikidata 换成本地名字（保留英文的州/省，同名城市分得清）
       if (c.var.weather.needsWikidataNames(lang)) {
         const r = await c.var.weather.localizeWithin(items, lang, NAME_BUDGET_MS, (p) => waitUntil(c, p), { keepAdmin: true });
         items = r.locs;
-        complete = r.complete;
+        complete = complete && r.complete;
       }
       // 城市名还没查好时只缓存 1 分钟，下次就是本地名字
       c.header('Cache-Control', `public, max-age=${complete ? 3600 : 60}`);
-      return c.json({ items: items.map((l) => ({ id: l.id, name: l.name, admin: l.adminArea, country: l.country })) });
+      // 按县、区名字找到的附近城市：显示成"惠东县（平山）"
+      const label = (l: (typeof items)[number]) => (l.area && l.area !== l.name ? t(lang, 'SearchAreaPlace', { area: l.area, place: l.name }) : l.name);
+      return c.json({ items: items.map((l) => ({ id: l.id, name: label(l), admin: l.adminArea, country: l.country })) });
     } catch {
       return c.json({ error: 'unavailable' }, 503);
     }
@@ -206,6 +222,14 @@ export function createApp(
     return c.html(`<!doctype html>${html}`);
   });
 
+  app.get('/:channel/:lang/settings', async (c) => {
+    const target = parseTarget(c);
+    if (!target) return c.notFound();
+    const html = await (<SettingsPage channel={target.channel} lang={target.lang} providerName={c.var.weather.providerName} />).toString();
+    c.header('Cache-Control', 'public, max-age=300');
+    return c.html(`<!doctype html>${html}`);
+  });
+
   app.get('/:channel/:lang/cities', async (c) => {
     const target = parseTarget(c);
     if (!target) return c.notFound();
@@ -255,9 +279,29 @@ function query(c: C): URLSearchParams {
   return new URL(c.req.url).searchParams;
 }
 
+/** 跳转用的语言：用户在设置页选过的语言优先（Darren 2026-10-28），其次锁屏传来的 locale、lang 参数、浏览器语言 */
 function langOf(c: C): Lang {
   const q = query(c);
-  return resolveLanguage({ locale: q.get('locale'), lang: q.get('lang'), acceptLanguage: c.req.header('Accept-Language') });
+  return preferredLang(c) ?? resolveLanguage({ locale: q.get('locale'), lang: q.get('lang'), acceptLanguage: c.req.header('Accept-Language') });
+}
+
+/** 设置页写入的语言 Cookie（client/main.ts setupSettings） */
+export const LANG_COOKIE = 'wlang';
+
+function preferredLang(c: C): Lang | null {
+  const m = (c.req.header('Cookie') ?? '').match(new RegExp(`(?:^|;\\s*)${LANG_COOKIE}=([a-z]{2})(?:;|$)`));
+  return m && isLang(m[1]) ? (m[1] as Lang) : null;
+}
+
+/** 请求是不是从本站页面点进来的 */
+function sameSiteReferer(c: C): boolean {
+  const ref = c.req.header('Referer');
+  if (!ref) return false;
+  try {
+    return new URL(ref).host === new URL(c.req.url).host;
+  } catch {
+    return false;
+  }
 }
 
 function parseTarget(c: C): { channel: Channel; lang: Lang } | null {
@@ -283,13 +327,43 @@ async function message(c: C, status: 404 | 500 | 503, titleKey: string, textKey:
   });
 }
 
-/** 首页和旧网址：决定城市坐标后跳转到新的城市网址 */
+/**
+ * 首页和旧网址：决定去哪个城市后跳转到新的城市网址（Darren 2026-10-29）。
+ * 1. 链接里带了坐标（锁屏、旧链接）：用坐标，那是设备的真实位置
+ * 2. 用户上次看的城市（Cookie wcity，浏览器在城市页写入，见 client/main.ts rememberCity）
+ *    —— 收藏页的"Current Location"（?here=1）跳过这一步，按 IP 定位
+ * 3. 按 IP 定位
+ */
 async function legacyHome(c: C, channel: Channel) {
   const q = query(c);
-  // 旧链接直接指定了城市坐标
-  const coords =
-    parseCoords(q.get('lat'), q.get('lon')) ?? visitorCoords(c.req.raw) ?? fallbackCoords(c.req.raw, c.req.header('Accept-Language'));
-  return redirectToNearest(c, channel, langOf(c), coords);
+  const lang = langOf(c);
+  const given = parseCoords(q.get('lat'), q.get('lon'));
+  if (!given && q.get(HERE_PARAM) !== '1') {
+    const id = lastCity(c);
+    if (id) {
+      try {
+        // 确认城市还在（地点信息缓存 30 天，几乎不请求 Foreca）；不在了就按 IP 定位
+        await c.var.weather.location(id);
+        c.header('Cache-Control', 'no-store');
+        return c.redirect(withNavParams(cityPath(channel, lang, id), q), 302);
+      } catch (err) {
+        if (!isNotFound(err)) console.warn('[home] remembered city unavailable', err);
+      }
+    }
+  }
+  const coords = given ?? visitorCoords(c.req.raw) ?? fallbackCoords(c.req.raw, c.req.header('Accept-Language'));
+  return redirectToNearest(c, channel, lang, coords);
+}
+
+/** 用户上次看的城市（浏览器在城市页写入，一年） */
+export const LAST_CITY_COOKIE = 'wcity';
+/** 收藏页"Current Location"：按定位，不用上次看的城市 */
+export const HERE_PARAM = 'here';
+
+function lastCity(c: C): string | null {
+  const m = (c.req.header('Cookie') ?? '').match(new RegExp(`(?:^|;\\s*)${LAST_CITY_COOKIE}=([^;]+)`));
+  const id = m ? m[1]!.trim() : '';
+  return LOCATION_ID.test(id) ? id : null;
 }
 
 async function redirectToNearest(c: C, channel: Channel, lang: Lang, coords: Coords) {
@@ -404,10 +478,23 @@ async function renderCity(c: C, channel: Channel, lang: Lang, id: string, sub?: 
     // 城市名还没查好（用了英文）时，和缺数据一样只缓存 1 分钟
     const bundle = { ...raw, location: named.locs[0] ?? base, missing: named.complete ? raw.missing : [...raw.missing, 'names'] };
     const now = c.var.weather.nowMs();
-    const features = cityFeatures(bundle, now);
+    // 当天的"和去年比"结果以第一次算出的为准（数据库最多等 0.8 秒，超时就用刚算出的）
+    // 这次算不出来（今天的预报或去年数据临时没取到）时，用当天早些时候定下的
+    const computed = cityFeatures(bundle, now);
+    const store = c.var.features;
+    const frozen = await withBudget(
+      computed.comparison ? store.freezeComparison(raw.location.id, computed.comparison) : store.frozenComparison(raw.location.id, raw.today),
+      FREEZE_BUDGET_MS,
+    ).catch((e) => {
+      console.warn('[climate] freeze failed', e);
+      // 没确认当天的结果：页面只缓存 1 分钟，免得这段时间里按另一个答案判
+      if (computed.comparison) bundle.missing.push('freeze');
+      return null;
+    });
+    const features = withFrozenComparison(computed, frozen);
     // 排行榜：顺便记录这个城市今天的偏差（不额外调用天气接口）
     // 排行榜存英文名（显示时再按页面语言换），所以用原始的地点信息
-    const record = anomalyRecord(raw, features.comparison, now);
+    const record = anomalyRecord(raw, features.series, now);
     if (record) waitUntil(c, c.var.features.recordAnomaly(record).catch((e) => console.warn('[ranking] record failed', e)));
     // 页面显示用：缺的逐小时、每日预报、生活指数补占位（显示 "--"），区块不隐藏
     const view = withPlaceholders(bundle, features, now);
@@ -481,6 +568,6 @@ async function loadRanking(c: C): Promise<Ranking> {
   const now = c.var.weather.nowMs();
   // 没有数据库时（预览、测试）不缓存，否则同一实例里刚记录的城市要等一小时才出现
   if (!features.persistent) return features.ranking(now);
-  const res = await c.var.weather.cached('v1:ranking', RANKING.cacheSeconds, () => features.ranking(now));
+  const res = await c.var.weather.cached('v2:ranking', RANKING.cacheSeconds, () => features.ranking(now));
   return res.data;
 }

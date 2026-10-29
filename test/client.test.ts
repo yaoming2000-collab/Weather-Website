@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addCity, MAX_CITIES, mergeCities, parseLegacy, parseSaved, readCookie, removeCity } from '../client/lib/saved';
 import { cityToday, minutesAgo, pastHourCount } from '../client/lib/time';
+import { citiesBack, lastCityCookie, parseLastCity } from '../client/lib/lastCity';
 import { defaultUnits, formatDistance, formatPrecip, formatSpeed, formatTemp, formatTempDelta, fromLegacy, parseUnits } from '../client/lib/units';
 
 describe('units', () => {
@@ -90,5 +91,92 @@ describe('browser time', () => {
     // 北京时间 11:20
     expect(pastHourCount(times, Date.UTC(2026, 9, 22, 3, 20))).toBe(1);
     expect(minutesAgo(Date.UTC(2026, 9, 22, 3, 0), Date.UTC(2026, 9, 22, 3, 7, 59))).toBe(7);
+  });
+});
+
+describe('guess streak', () => {
+  it('counts correct days in a row and breaks on a wrong answer', async () => {
+    const { recordResult, currentStreak } = await import('../client/lib/streak');
+    let s = recordResult(undefined, '2026-10-20', true);
+    s = recordResult(s, '2026-10-21', true);
+    s = recordResult(s, '2026-10-22', true);
+    expect(s).toEqual({ cur: 3, best: 3, last: '2026-10-22' });
+    // 同一天再记不变
+    expect(recordResult(s, '2026-10-22', false)).toBe(s);
+    s = recordResult(s, '2026-10-23', false);
+    expect(s.cur).toBe(0);
+    expect(s.best).toBe(3);
+    s = recordResult(s, '2026-10-24', true);
+    expect(currentStreak(s, '2026-10-24')).toBe(1);
+  });
+
+  it('breaks when a day is missed, but not when there was no question', async () => {
+    const { recordResult, recordSkip, currentStreak } = await import('../client/lib/streak');
+    let s = recordResult(recordResult(undefined, '2026-10-20', true), '2026-10-21', true);
+    // 22 日没出题（去年数据缺失）
+    s = recordSkip(s, '2026-10-22')!;
+    s = recordResult(s, '2026-10-23', true);
+    expect(s.cur).toBe(3);
+    // 昨天之前就没再猜：今天看到的是 0
+    expect(currentStreak(s, '2026-10-24')).toBe(3);
+    expect(currentStreak(s, '2026-10-25')).toBe(0);
+    // 隔了一天再猜对：重新从 1 开始，最长保留
+    s = recordResult(s, '2026-10-25', true);
+    expect(s).toEqual({ cur: 1, best: 3, last: '2026-10-25' });
+  });
+
+  it('ignores damaged storage', async () => {
+    const { readStreaks } = await import('../client/lib/streak');
+    expect(readStreaks('not json')).toEqual({});
+    expect(readStreaks('{"1":{"cur":"x"}}')).toEqual({});
+  });
+});
+
+describe('guess streak edge cases', () => {
+  it('counts a real guess made after a "no question" mark on the same day', async () => {
+    const { recordResult, recordSkip } = await import('../client/lib/streak');
+    let s = recordResult(undefined, '2026-10-20', true);
+    s = recordSkip(s, '2026-10-21')!;
+    expect(s.skipped).toBe(true);
+    s = recordResult(s, '2026-10-21', true);
+    expect(s).toEqual({ cur: 2, best: 2, last: '2026-10-21' });
+  });
+
+  it('ignores a guess for a day before the last one (an old cached page)', async () => {
+    const { recordResult } = await import('../client/lib/streak');
+    const s = recordResult(recordResult(undefined, '2026-10-21', true), '2026-10-22', true);
+    expect(recordResult(s, '2026-10-21', false)).toBe(s);
+  });
+});
+
+describe('last city (My Cities back link)', () => {
+  const last = { id: '101796236', name: '上海', path: '/wmi/zh/w/101796236' };
+  const host = 'weather.itsfunmag.com';
+
+  it('reads only well-formed entries', () => {
+    expect(parseLastCity(JSON.stringify(last))).toEqual(last);
+    expect(parseLastCity(JSON.stringify({ ...last, path: 'https://evil.example/' }))).toBeNull();
+    expect(parseLastCity('{bad')).toBeNull();
+    expect(parseLastCity(null)).toBeNull();
+  });
+
+  it('goes back to the city page the visitor came from, in the current language', () => {
+    expect(citiesBack(`https://${host}/wmi/en/w/101796236/climate?session=1`, host, last, 'zh')).toEqual({ path: '/wmi/zh/w/101796236/climate', label: '上海' });
+  });
+
+  it('only names the city when the link really goes there (another tab may have changed the last city)', () => {
+    expect(citiesBack(`https://${host}/wmi/en/w/102643743`, host, last, 'zh')).toEqual({ path: '/wmi/zh/w/102643743', label: null });
+  });
+
+  it('otherwise goes to the last city; nothing known keeps the server link', () => {
+    expect(citiesBack(`https://${host}/wmi/zh/settings`, host, last, 'en')).toEqual({ path: '/wmi/en/w/101796236', label: '上海' });
+    expect(citiesBack('https://other.example/wmi/en/w/1', host, null, 'en')).toEqual({ path: null, label: null });
+    expect(citiesBack('', host, null, 'en')).toEqual({ path: null, label: null });
+    expect(parseLastCity(JSON.stringify({ ...last, path: '/\\evil.com/zh/w/1' }))).toBeNull();
+  });
+
+  it('cookie lasts a year and is Secure on https', () => {
+    expect(lastCityCookie('101796236', true)).toBe('wcity=101796236; Path=/; Max-Age=31536000; SameSite=Lax; Secure');
+    expect(lastCityCookie('101796236', false)).not.toContain('Secure');
   });
 });

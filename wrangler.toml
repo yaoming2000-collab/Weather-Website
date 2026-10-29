@@ -16,20 +16,22 @@ html_handling = "none"
 # 天气数据的全局缓存（第二层缓存）。部署前用 `wrangler kv namespace create WEATHER_KV` 创建，把 id 填到这里。
 [[kv_namespaces]]
 binding = "WEATHER_KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "a0300b21fc444a73a0e6e3a045ee9d32"
 
-# 猜一猜计数和排行榜（第 3 步）。部署前：
+# 猜一猜计数和排行榜（第 3 步）。binding 必须叫 DB（代码里用 env.DB，名字不对会静默退回内存）。部署前：
 #   npx wrangler d1 create weather-features                         # 把输出的 database_id 填到这里
 #   npx wrangler d1 migrations apply weather-features --remote      # 建表（migrations/ 目录）
 [[d1_databases]]
 binding = "DB"
 database_name = "weather-features"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "8db7179d-bdb0-4410-844e-64650952b298"
 migrations_dir = "migrations"
 
-# 定时任务：每天 03:17（UTC）清理过期的猜一猜计数（保留 7 天）和排行榜数据（保留 2 天）
+# 定时任务：
+#   每天 03:17（UTC）清理过期的猜一猜计数（保留 7 天）和排行榜数据（保留 2 天）
+#   每 10 分钟取回页面排队的去年数据（OpenWeather 一次要 40 多秒，页面不等它；需要 KV）
 [triggers]
-crons = ["17 3 * * *"]
+crons = ["17 3 * * *", "*/10 * * * *"]
 
 # 城市搜索的频率限制：每个 IP 每 60 秒最多 30 次（每次搜索都向 Foreca 计费，防止机器人消耗额度）。
 # 计数按 Cloudflare 机房分别统计。需要 wrangler 4.36 或更新版本。
@@ -54,8 +56,10 @@ WEATHER_PROVIDER = "foreca"
 # ---------------------------------------------------------------------------
 # 测试环境（预览用）：npx wrangler deploy --env preview
 # 地址 https://weather-next.itsfunmag.com，使用真实 Foreca 数据（需要先设置密钥：
-#   npx wrangler secret put FORECA_TOKEN --env preview）。不需要创建 KV 和 D1：
-#   数据缓存退回每个机房各自的缓存；猜一猜和排行榜退回内存（Worker 重启后清零，预览够用）；不做调用统计。
+#   npx wrangler secret put FORECA_TOKEN --env preview）。
+# 需要一个 KV（去年数据由定时任务取回后存在 KV，页面才看得到）：
+#   npx wrangler kv namespace create WEATHER_KV --env preview      # 把输出的 id 填到下面 [[env.preview.kv_namespaces]]
+# 不需要 D1：猜一猜和排行榜退回内存（Worker 重启后清零，预览够用）；不做调用统计。
 # 本地开发想用模拟数据：npx wrangler dev --env preview --var WEATHER_PROVIDER:mock
 # 详细步骤见 docs/deploy-preview.md
 # ---------------------------------------------------------------------------
@@ -70,6 +74,21 @@ simple = { limit = 30, period = 60 }
 
 [env.preview.version_metadata]
 binding = "CF_VERSION_METADATA"
+
+# 测试环境的 KV（绑定不会从上面继承）。
+# 2026-10-29 暂时和正式环境共用同一个（a0300b…）。正式上线前请单独建一个，免得测试数据混进正式缓存和待取队列：
+#   npx wrangler kv namespace create WEATHER_KV --env preview      # 把输出的 id 换到这里
+[[env.preview.kv_namespaces]]
+binding = "WEATHER_KV"
+id = "a0300b21fc444a73a0e6e3a045ee9d32"
+
+# 日志保留在 Cloudflare 控制台（Workers → weather-itsfunmag-preview → Logs），方便查定时任务；免费额度每天 20 万条
+[env.preview.observability]
+enabled = true
+
+# 定时任务（写明，和上面一样）
+[env.preview.triggers]
+crons = ["17 3 * * *", "*/10 * * * *"]
 
 [env.preview.vars]
 WEATHER_PROVIDER = "foreca"

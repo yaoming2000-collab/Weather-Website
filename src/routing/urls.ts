@@ -29,6 +29,11 @@ export function cityPath(channel: Channel, lang: Lang, locationId: string, sub?:
   return `/${channel}/${lang}/w/${encodeURIComponent(locationId)}${sub ? `/${sub}` : ''}`;
 }
 
+/** 设置页（语言、温度单位、风速单位）；返回到哪一页由浏览器脚本记住（见 client/main.ts setupSettings） */
+export function settingsPath(channel: Channel, lang: Lang): string {
+  return `/${channel}/${lang}/settings`;
+}
+
 export function citiesPath(channel: Channel, lang: Lang): string {
   return `/${channel}/${lang}/cities`;
 }

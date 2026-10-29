@@ -19,6 +19,8 @@ import {
   type SavedCity,
 } from './lib/saved';
 import { entryKey, GUESS_KEY, isChoice, percentRight, readBook, VOTE_KEY, writeBook, type Choice, type Counts } from './lib/interact';
+import { currentStreak, readStreaks, recordResult, recordSkip, STREAK_KEY } from './lib/streak';
+import { citiesBack, LAST_CITY_KEY, lastCityCookie, parseLastCity } from './lib/lastCity';
 import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS, STALE_AFTER_MIN } from './lib/time';
 import { drawCard, shareOrDownload } from './share';
 import { reportWebVitals } from './vitals';
@@ -141,68 +143,108 @@ function applyUnits(u: Units, root: ParentNode = document) {
       if (unit) unit.textContent = f.unit;
     }
   }
-  for (const b of $$('[data-units-toggle]')) b.textContent = u.temp === 'f' ? '°F' : '°C';
 }
 
 /**
  * 单位设置：点右上角 °C/°F 按钮弹出一个小面板，温度和风速分开选，选了立即生效并记住。
  */
-function setupUnits() {
-  let panel: HTMLElement | null = null;
-  const close = () => {
-    panel?.remove();
-    panel = null;
-    for (const b of $$('[data-units-toggle]')) b.setAttribute('aria-expanded', 'false');
-  };
-  const open = (button: HTMLElement) => {
-    close();
-    const u = currentUnits();
-    panel = el('div', { class: 'units-pop', role: 'dialog', 'aria-label': s('UnitsTitle') });
-    const group = (label: string, options: Array<[string, string]>, value: string, pick: (v: string) => void) => {
-      const row = el('div', { class: 'units-row' });
-      row.append(el('div', { class: 'units-label' }, label));
-      const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': label, dir: 'ltr' });
-      for (const [v, text] of options) {
-        const b = el('button', { type: 'button', role: 'radio', 'aria-checked': String(v === value) }, text);
-        b.addEventListener('click', () => {
-          pick(v);
-          for (const x of $$('[role="radio"]', seg)) x.setAttribute('aria-checked', String(x === b));
-        });
-        seg.append(b);
-      }
-      row.append(seg);
-      return row;
-    };
-    const update = (patch: Partial<Units>) => {
-      const next = { ...currentUnits(), ...patch };
-      saveUnits(next);
-      applyUnits(next);
-    };
-    panel.append(
-      group(s('TemperatureLabel'), [['c', '°C'], ['f', '°F']], u.temp, (v) => update({ temp: v as Units['temp'] })),
-      group(s('WindSpeedLabel'), [['kmh', 'km/h'], ['ms', 'm/s'], ['mph', 'mph']], u.wind, (v) => update({ wind: v as Units['wind'] })),
-    );
-    const r = button.getBoundingClientRect();
-    panel.style.top = `${Math.round(r.bottom + 8)}px`;
-    document.body.append(panel);
-    button.setAttribute('aria-expanded', 'true');
-    (panel.querySelector('[aria-checked="true"]') as HTMLElement | null)?.focus();
-  };
-  for (const b of $$('[data-units-toggle]')) {
-    b.setAttribute('aria-haspopup', 'dialog');
-    b.setAttribute('aria-expanded', 'false');
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (panel) close();
-      else open(b);
+/** 设置页写入的语言 Cookie：服务器跳转时优先用它（src/app.tsx preferredLang） */
+const LANG_COOKIE = 'wlang';
+/** 进入设置页之前的页面，"返回"时回去（换了语言就回到那一页的新语言版本） */
+const SETTINGS_RETURN_KEY = 'weather.settings.return';
+
+/**
+ * 设置页：温度 / 风速单位（存浏览器）、语言（存 Cookie，一年）。
+ * 单位改了立刻生效；语言点了就跳到那个语言的设置页。
+ */
+function setupSettings() {
+  if (data.page !== 'settings') return;
+  // 记住从哪一页进来（同站、不是设置页本身）
+  try {
+    const ref = document.referrer ? new URL(document.referrer) : null;
+    if (ref && ref.host === location.host && !/\/settings$/.test(ref.pathname)) sessionStorage.setItem(SETTINGS_RETURN_KEY, ref.pathname + ref.search);
+  } catch {
+    // sessionStorage 不可用时返回渠道首页
+  }
+
+  const u = currentUnits();
+  const groups: Array<[string, keyof Units, string]> = [
+    ['temp', 'temp', u.temp],
+    ['wind', 'wind', u.wind],
+  ];
+  for (const [name, field, value] of groups) {
+    const seg = document.querySelector<HTMLElement>(`[data-units-group="${name}"]`);
+    if (!seg) continue;
+    const buttons = $$<HTMLButtonElement>('[data-unit]', seg);
+    const mark = (v: string) => buttons.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.unit === v)));
+    mark(value);
+    for (const b of buttons) {
+      b.addEventListener('click', () => {
+        const next = { ...currentUnits(), [field]: b.dataset.unit } as Units;
+        saveUnits(next);
+        applyUnits(next);
+        mark(b.dataset.unit ?? '');
+      });
+    }
+  }
+
+  for (const a of $$<HTMLAnchorElement>('[data-lang-choice]')) {
+    a.addEventListener('click', () => {
+      const code = a.dataset.langChoice ?? '';
+      document.cookie = `${LANG_COOKIE}=${code}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
     });
   }
-  // pointerdown：iOS Safari 点在不可点击的区域时不一定触发 click
-  document.addEventListener('pointerdown', (e) => {
-    if (panel && !panel.contains(e.target as Node) && !(e.target as Element).closest?.('[data-units-toggle]')) close();
-  });
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && close());
-  addEventListener('scroll', close, { passive: true });
+
+  const back = document.querySelector<HTMLAnchorElement>('[data-settings-back]');
+  if (back) {
+    let target: string | null = null;
+    try {
+      target = sessionStorage.getItem(SETTINGS_RETURN_KEY);
+    } catch {
+      target = null;
+    }
+    // 网址是 /{渠道}/{语言}/...：换成当前语言
+    if (target && /^\/[^/]+\/[a-z]{2}\//.test(target)) {
+      back.setAttribute('href', withNav(target.replace(/^(\/[^/]+\/)[a-z]{2}\//, `$1${data.lang}/`)));
+    } else if (target) {
+      back.setAttribute('href', withNav(target));
+    }
+  }
+}
+
+/** 胶囊里放不下的文字：量出多出来的宽度，来回滚动（停顿、滚过去、停顿，循环）；放得下就不动 */
+function setupMarquee(root: ParentNode = document) {
+  const rtl = document.documentElement.dir === 'rtl';
+  for (const box of $$('[data-marquee]', root)) {
+    const inner = box.firstElementChild as HTMLElement | null;
+    if (!inner) continue;
+    box.classList.remove('run');
+    const extra = inner.scrollWidth - box.clientWidth;
+    if (extra <= 2) continue;
+    box.style.setProperty('--mq-dist', `${rtl ? extra : -extra}px`);
+    // 每秒约 30 像素，两头各停约 18%（至少 6 秒一轮，短的也能看清）
+    box.style.setProperty('--mq-time', `${Math.max(6, extra / 30 / 0.64).toFixed(1)}s`);
+    box.classList.add('run');
+  }
+}
+
+/** 城市页：记住这个城市，下次打开首页直接来这里（Darren 2026-10-29） */
+function rememberCity() {
+  const city = data.city;
+  if (!city?.id || !city.name) return;
+  document.cookie = lastCityCookie(city.id, location.protocol === 'https:');
+  storage.set(LAST_CITY_KEY, JSON.stringify({ id: city.id, name: city.name, path: location.pathname }));
+}
+
+/** 收藏页左上角"返回"：回到进来之前的城市页，显示城市名 */
+function setupCitiesBack() {
+  const back = document.querySelector<HTMLAnchorElement>('[data-cities-back]');
+  if (!back) return;
+  const last = parseLastCity(storage.get(LAST_CITY_KEY));
+  const { path, label } = citiesBack(document.referrer, location.host, last, data.lang);
+  if (path) back.setAttribute('href', withNav(path));
+  const span = back.querySelector('span');
+  if (span && label) span.textContent = label;
 }
 
 // ---------- 3. 现在、今天、更新时间 ----------
@@ -285,6 +327,8 @@ async function refreshLive(retry = true) {
     document.body.className = doc.body.className;
     const theme = doc.querySelector('meta[name="theme-color"]')?.getAttribute('content');
     if (theme) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme);
+    revealGuessTags();
+    setupMarquee();
     applyUnits(currentUnits());
     applyTime();
   } catch {
@@ -475,7 +519,38 @@ function readCounts(j: unknown): Counts | null {
   return c && typeof c.colder === 'number' ? c : null;
 }
 
+/**
+ * 首页"和去年比"标签：猜过之后才显示结果（首次绘制前页面里的内联脚本已经做过一次；页面更新后要再做）。
+ */
+function revealGuessTags(root: ParentNode = document) {
+  const book = readBook(storage.get(GUESS_KEY));
+  for (const a of $$('[data-guess-tag]', root)) {
+    if (!book[a.dataset.guessTag ?? '']) continue;
+    const tpl = a.querySelector('template');
+    const text = a.querySelector('[data-tag-text]');
+    if (!tpl || !text) continue;
+    text.replaceChildren(tpl.content.cloneNode(true));
+    a.style.setProperty('--lv', a.dataset.resultColor ?? '');
+    a.removeAttribute('data-guess-tag');
+  }
+}
+
+/** 往年对比页没出题（去年数据缺失）：连续猜对天数不算断 */
+function markSkippedDay() {
+  const box = document.querySelector<HTMLElement>('[data-no-question]');
+  const city = box?.dataset.city;
+  const date = box?.dataset.date;
+  if (!city || !date) return;
+  const book = readStreaks(storage.get(STREAK_KEY));
+  const next = recordSkip(book[city], date);
+  if (next && next !== book[city]) {
+    book[city] = next;
+    storage.set(STREAK_KEY, JSON.stringify(book));
+  }
+}
+
 function setupGuess() {
+  markSkippedDay();
   const box = document.querySelector<HTMLElement>('[data-guess]');
   const reveal = document.querySelector<HTMLElement>('[data-reveal]');
   if (!box || !reveal) return;
@@ -493,12 +568,50 @@ function setupGuess() {
     pctEl.textContent = p === null ? '' : s('GuessPercentRight', { percent: p });
   };
 
+  const streakEl = reveal.querySelector<HTMLElement>('[data-streak]');
+  const showStreak = (fresh: boolean, correct: boolean) => {
+    if (!streakEl) return;
+    const st = readStreaks(storage.get(STREAK_KEY))[city];
+    const n = currentStreak(st, date);
+    const best = st?.best ?? 0;
+    streakEl.replaceChildren();
+    if (n > 0) {
+      const num = el('span', fresh && correct ? { class: 'bump' } : {}, String(n));
+      const [before, after = ''] = s('StreakCurrent').split('{n}');
+      streakEl.append(before ?? '', num, after, ` · ${s('StreakBest', { n: best })}`);
+    } else if (best > 0) {
+      streakEl.append(`${s('StreakBroken')} · ${s('StreakBest', { n: best })}`);
+    } else {
+      streakEl.hidden = true;
+      return;
+    }
+    streakEl.hidden = false;
+  };
+
   const open = (choice: Choice, animate: boolean) => {
     box.toggleAttribute('data-done', true);
     for (const b of $$<HTMLButtonElement>('[data-choice]', box)) b.setAttribute('aria-pressed', String(b.dataset.choice === choice));
     if (resultEl) resultEl.textContent = s(choice === answer ? 'GuessRight' : 'GuessWrong');
     reveal.classList.add('on');
+    if (animate) {
+      // 只有当场猜的才计入连续天数（同一天重复打开不会重复计）
+      const book = readStreaks(storage.get(STREAK_KEY));
+      book[city] = recordResult(book[city], date, choice === answer);
+      stored(storage.set(STREAK_KEY, JSON.stringify(book)));
+    }
+    showStreak(animate, choice === answer);
     if (animate) reveal.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+  };
+
+  // 猜之前也显示连续天数，鼓励接着猜（Darren 2026-10-29）
+  const preEl = box.querySelector<HTMLElement>('[data-streak-pre]');
+  const showPreStreak = () => {
+    if (!preEl) return;
+    const st = readStreaks(storage.get(STREAK_KEY))[city];
+    const n = currentStreak(st, date);
+    const best = st?.best ?? 0;
+    preEl.textContent = n > 0 ? s('StreakBeforeGuess', { n }) : best > 0 ? s('StreakRestart', { n: best }) : '';
+    preEl.hidden = !preEl.textContent;
   };
 
   const previous = readBook(storage.get(GUESS_KEY))[key]?.v;
@@ -511,10 +624,12 @@ function setupGuess() {
     return;
   }
 
+  showPreStreak();
   for (const b of $$<HTMLButtonElement>('[data-choice]', box)) {
     b.addEventListener('click', async () => {
       const choice = b.dataset.choice;
       if (!isChoice(choice) || box.hasAttribute('data-done')) return;
+      if (preEl) preEl.hidden = true;
       storage.set(GUESS_KEY, JSON.stringify(writeBook(readBook(storage.get(GUESS_KEY)), key, choice, Date.now())));
       open(choice, true);
       try {
@@ -672,10 +787,21 @@ function registerServiceWorker() {
 
 function init() {
   syncNav();
+  revealGuessTags();
   applyUnits(currentUnits());
   applyTime();
 
-  setupUnits();
+  setupSettings();
+  rememberCity();
+  setupCitiesBack();
+  setupMarquee();
+  // 只在宽度变化时重量（手机滚动时地址栏伸缩也会触发 resize）
+  let lastWidth = innerWidth;
+  addEventListener('resize', () => {
+    if (innerWidth === lastWidth) return;
+    lastWidth = innerWidth;
+    setupMarquee();
+  });
 
   setupSaveButton();
   void migrateLegacy().then(() => {

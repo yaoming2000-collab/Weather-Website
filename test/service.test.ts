@@ -3,7 +3,9 @@ import { MemoryStore, TieredStore } from '../src/cache/store';
 import { DATA_TTL, FAILURE_TTL, MAX_STALE_SECONDS, OPTIONAL_DATA_BUDGET_MS } from '../src/config/thresholds';
 import { MockProvider } from '../src/weather/mock';
 import { ProviderError } from '../src/weather/provider';
-import { fromCurrentHour, searchLongEnough, shouldFetchNowcast, WeatherService } from '../src/weather/service';
+import { fromCurrentHour, historyFreshUntil, searchLongEnough, shouldFetchNowcast, WeatherService } from '../src/weather/service';
+import { MockHistory, type PastWeatherSource } from '../src/weather/history';
+import { HISTORY_MAX_ATTEMPTS, KvHistoryQueue, MemoryHistoryQueue } from '../src/weather/historyQueue';
 import type { CacheStore } from '../src/cache/store';
 
 function setup(startMs = Date.UTC(2026, 9, 22, 3, 0)) {
@@ -31,8 +33,19 @@ function setup(startMs = Date.UTC(2026, 9, 22, 3, 0)) {
     },
   });
   const store = new MemoryStore(clock);
+  // 去年同一天的数据（OpenWeather）：统计调用次数，可模拟故障
+  const mockHistory = new MockHistory();
+  const history: PastWeatherSource = {
+    name: 'owm',
+    days: (lat, lon, start) => {
+      calls.history = (calls.history ?? 0) + 1;
+      const b = broken.get('history');
+      if (b) return Promise.reject(new ProviderError('broken', b));
+      return mockHistory.days(lat, lon, start);
+    },
+  };
   // stagger：本"机房"过期后再等多久才刷新（0 = 一过期就刷新）
-  const make = (st: CacheStore, stagger = 0) => new WeatherService(counted, st, clock, () => undefined, stagger);
+  const make = (st: CacheStore, stagger = 0) => new WeatherService(counted, st, clock, () => undefined, stagger, undefined, undefined, history);
   const service = make(store);
   return {
     service,
@@ -132,13 +145,28 @@ describe('WeatherService caching', () => {
     expect(calls.nearestLocation).toBe(1);
   });
 
-  it('asks for climate data using the city date, not the server date', async () => {
+  it('asks for last year using the city date, in cached 10-day blocks', async () => {
     // 03:00 UTC 时美国中部还是 21 日
-    const { service } = setup(Date.UTC(2026, 9, 22, 3, 0));
+    const { service, calls, advance } = setup(Date.UTC(2026, 9, 22, 3, 0));
     const bundle = await service.cityBundle('104686017');
     expect(bundle.today).toBe('2026-10-21');
-    expect(bundle.climate?.data.monthDay).toBe('10-21');
-    expect(bundle.climateMonthly?.data).toHaveLength(12);
+    expect(bundle.lastYear?.data['2026-10-21']?.date).toBe('2025-10-21');
+    // 去年：今天 + 过去 8 天；今年：过去 8 天（到昨天）
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(9);
+    expect(Object.keys(bundle.pastWeek!.data)).toEqual(Array.from({ length: 8 }, (_, i) => `2026-10-${13 + i}`));
+    // 今年、去年各 1–2 个 10 天块
+    const first = calls.history!;
+    expect(first).toBeGreaterThanOrEqual(2);
+    expect(first).toBeLessThanOrEqual(4);
+    // 一天后再打开：只更新含最近几天的块，两天以前的块和去年的不再取
+    advance(86400);
+    const next = await service.cityBundle('104686017');
+    expect(calls.history! - first).toBeLessThanOrEqual(2);
+    expect(next.pastWeek!.data['2026-10-21']?.date).toBe('2026-10-21');
+    // 有一块临时取不到：记为缺数据（页面只缓存 1 分钟）
+    // Foreca 的往年平均不再请求
+    expect(calls.climateDay ?? 0).toBe(0);
+    expect(calls.climateMonthly ?? 0).toBe(0);
   });
 
   it('starts lists at the current hour and keeps enough hours for tomorrow', async () => {
@@ -155,12 +183,10 @@ describe('WeatherService caching', () => {
 
   it('does not count data a city never has as missing, but does count temporary failures', async () => {
     const { service, breakMethod } = setup();
-    breakMethod('climateDay', 404);
-    breakMethod('climateMonthly', 403);
+    breakMethod('history', 403);
     breakMethod('airQuality', 503);
     const bundle = await service.cityBundle('102643743');
-    expect(bundle.climate).toBeNull();
-    expect(bundle.climateMonthly).toBeNull();
+    expect(bundle.lastYear).toBeNull();
     expect(bundle.air).toBeNull();
     expect(bundle.missing).toEqual(['air']);
   });
@@ -354,3 +380,312 @@ describe('usage recording', () => {
   });
 });
 
+
+describe('search by county or district name', () => {
+  function svc(areas: Array<{ label: string; lat: number; lon: number }>, fail = false) {
+    let asked = 0;
+    const areaSearch = {
+      searchAreas: async () => {
+        asked++;
+        if (fail) throw new Error('wikidata down');
+        return areas;
+      },
+    };
+    const service = new WeatherService(new MockProvider(), new MemoryStore(), () => Date.UTC(2026, 9, 22, 3), () => undefined, 0, undefined, undefined, undefined, areaSearch);
+    return { service, asked: () => asked };
+  }
+
+  it('finds the nearby city when Foreca has no match', async () => {
+    const { service } = svc([{ label: 'Camden', lat: 51.54, lon: -0.14 }]);
+    const hits = await service.search('Camden', 'en');
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.name).toBe('London');
+    expect(hits[0]!.area).toBe('Camden');
+  });
+
+  it('drops places too far from the area', async () => {
+    const { service } = svc([{ label: 'Middle of the Atlantic', lat: 40, lon: -40 }]);
+    expect(await service.search('Atlantic', 'en')).toEqual([]);
+  });
+
+  it('does not ask Wikidata when Foreca finds the city, and survives Wikidata errors', async () => {
+    const ok = svc([]);
+    expect((await ok.service.search('London', 'en')).length).toBeGreaterThan(0);
+    expect(ok.asked()).toBe(0);
+    const broken = svc([], true);
+    expect(await broken.service.search('Nowhere', 'en')).toEqual([]);
+  });
+});
+
+describe('last year blocks that fail', () => {
+  it('marks the page as missing data when one block fails for a temporary reason', async () => {
+    let n = 0;
+    const history = {
+      name: 'owm',
+      days: async (lat: number, lon: number, start: string) => {
+        if (n++ === 0) throw new ProviderError('busy', 503);
+        return new MockHistory().days(lat, lon, start);
+      },
+    };
+    const service = new WeatherService(new MockProvider(() => Date.UTC(2026, 9, 22, 3)), new MemoryStore(() => Date.UTC(2026, 9, 22, 3)), () => Date.UTC(2026, 9, 22, 3), () => undefined, 0, undefined, undefined, history);
+    const bundle = await service.cityBundle('102643743');
+    expect(bundle.missing).toContain('lastYear');
+    expect(Object.keys(bundle.lastYear!.data).length).toBeGreaterThan(0);
+  });
+});
+
+describe('last year via the prefetch queue (OpenWeather is too slow for pages)', () => {
+  const NOW = Date.UTC(2026, 9, 22, 3);
+  const setup = (fail?: (start: string) => ProviderError | null) => {
+    const calls: string[] = [];
+    const history: PastWeatherSource = {
+      name: 'owm',
+      slow: true,
+      days: async (lat, lon, start) => {
+        calls.push(start);
+        const e = fail?.(start);
+        if (e) throw e;
+        return new MockHistory().days(lat, lon, start);
+      },
+    };
+    const queue = new MemoryHistoryQueue();
+    const store = new MemoryStore(() => NOW);
+    const make = () => new WeatherService(new MockProvider(() => NOW), store, () => NOW, () => undefined, 0, undefined, undefined, history, undefined, queue);
+    return { calls, queue, make };
+  };
+
+  it('pages only read the cache, queue what is missing and say it is being prepared', async () => {
+    const { calls, queue, make } = setup();
+    const svc = make();
+    const bundle = await svc.cityBundle('102643743');
+    expect(calls).toEqual([]);
+    expect(bundle.missing).toContain('lastYearPending');
+    expect(bundle.missing).not.toContain('lastYear');
+    expect(bundle.lastYear?.data).toEqual({});
+    expect(queue.jobs.size).toBeGreaterThanOrEqual(2);
+    const jobs = [...queue.jobs.values()];
+    expect(jobs.every((j) => j.cityId === '102643743' && j.attempts === 0)).toBe(true);
+    // 同一实例再打开不会重复写队列
+    const adds = queue.adds;
+    await svc.cityBundle('102643743');
+    expect(queue.adds).toBe(adds);
+  });
+
+  it('the scheduled job fetches the queued blocks, then pages have the data', async () => {
+    const { calls, queue, make } = setup();
+    await make().cityBundle('102643743');
+    const queued = queue.jobs.size;
+    const r = await make().drainHistoryQueue();
+    expect(r).toEqual({ fetched: queued, dropped: 0, retried: 0, left: 0 });
+    expect(calls.length).toBe(queued);
+    expect(queue.jobs.size).toBe(0);
+    const bundle = await make().cityBundle('102643743');
+    expect(bundle.missing).not.toContain('lastYearPending');
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(9);
+    expect(Object.keys(bundle.pastWeek!.data)).toHaveLength(8);
+    expect(calls.length).toBe(queued);
+  });
+
+  it('drops blocks the source does not have; pages then show no question instead of waiting', async () => {
+    const { queue, make } = setup(() => new ProviderError('bad request', 404));
+    await make().cityBundle('102643743');
+    const r = await make().drainHistoryQueue();
+    expect(r.dropped).toBeGreaterThanOrEqual(2);
+    expect(queue.jobs.size).toBe(0);
+    const bundle = await make().cityBundle('102643743');
+    expect(bundle.missing).not.toContain('lastYearPending');
+    expect(bundle.missing).not.toContain('lastYear');
+    expect(bundle.lastYear).toBeNull();
+  });
+
+  it('retries temporary failures a few times, then gives up', async () => {
+    const { queue, make } = setup(() => new ProviderError('busy', 503));
+    await make().cityBundle('102643743');
+    const queued = queue.jobs.size;
+    const first = await make().drainHistoryQueue();
+    expect(first.retried).toBe(queued);
+    expect([...queue.jobs.values()].every((j) => j.attempts === 1)).toBe(true);
+    for (let i = 1; i < HISTORY_MAX_ATTEMPTS; i++) await make().drainHistoryQueue();
+    expect(queue.jobs.size).toBe(0);
+    // 放弃后页面不再把它放回队列，也不说"正在准备"：今天不出题
+    const adds = queue.adds;
+    const bundle = await make().cityBundle('102643743');
+    expect(queue.adds).toBe(adds);
+    expect(queue.jobs.size).toBe(0);
+    expect(bundle.missing).not.toContain('lastYearPending');
+    expect(bundle.lastYear).toBeNull();
+  });
+
+  it('stops the run on a key or quota problem and keeps the jobs; pages stop queuing on 401/403', async () => {
+    for (const status of [401, 429]) {
+      const { calls, queue, make } = setup(() => new ProviderError('nope', status));
+      await make().cityBundle('102643743');
+      const queued = queue.jobs.size;
+      const r = await make().drainHistoryQueue({ concurrency: 1 });
+      expect(r.stopped).toBe(status);
+      expect(calls).toHaveLength(1);
+      expect(queue.jobs.size).toBe(queued);
+      expect([...queue.jobs.values()].every((j) => j.attempts === 0)).toBe(true);
+    }
+  });
+
+  it('takes fresh jobs before ones that keep failing', async () => {
+    const q = new MemoryHistoryQueue();
+    await q.add({ cityId: 'a', lat: 0, lon: 0, start: '2025-10-20' });
+    await q.add({ cityId: 'b', lat: 0, lon: 0, start: '2025-10-20' });
+    await q.retry((await q.take(1))[0]!);
+    expect((await q.take(2)).map((j) => j.cityId)).toEqual(['b', 'a']);
+  });
+
+  it('says "being prepared" only for the days whose block is queued', async () => {
+    const { make } = setup();
+    const svc = make();
+    const ly = await svc.pastDays({ id: '102643743', name: 'London', adminArea: null, country: 'GB', timezone: 'Europe/London', lat: 51.5, lon: -0.12 }, ['2025-10-22', '2025-10-23']);
+    expect(ly.pending).toBe(true);
+    expect(ly.pendingDates).toEqual(['2025-10-22', '2025-10-23']);
+  });
+
+  it('stops starting new requests after the deadline', async () => {
+    const { calls, queue, make } = setup();
+    await make().cityBundle('102643743');
+    const r = await make().drainHistoryQueue({ stopAt: Date.now() - 1 });
+    expect(r.left).toBe(queue.jobs.size);
+    expect(calls).toEqual([]);
+  });
+
+  it('without a queue, pages fetch directly as before', async () => {
+    const calls: string[] = [];
+    const history: PastWeatherSource = { name: 'owm', slow: true, days: async (lat, lon, start) => (calls.push(start), new MockHistory().days(lat, lon, start)) };
+    const svc = new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, undefined, history);
+    const bundle = await svc.cityBundle('102643743');
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(9);
+  });
+});
+
+describe('KV history queue', () => {
+  function fakeKv() {
+    const map = new Map<string, { value: string; metadata: unknown }>();
+    const kv = {
+      map,
+      get: async (k: string) => map.get(k)?.value ?? null,
+      put: async (k: string, value: string, o?: { metadata?: unknown }) => void map.set(k, { value, metadata: o?.metadata }),
+      delete: async (k: string) => void map.delete(k),
+      list: async ({ prefix }: { prefix: string }) => ({
+        keys: [...map.entries()].filter(([k]) => k.startsWith(prefix)).sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, v]) => ({ name, metadata: v.metadata })),
+      }),
+    };
+    return kv;
+  }
+
+  it('adds once, keeps attempts in metadata, gives up after the limit', async () => {
+    const kv = fakeKv();
+    const q = new KvHistoryQueue(kv as unknown as KVNamespace);
+    const job = { cityId: '102643743', lat: 51.5, lon: -0.12, start: '2025-10-20' };
+    await q.add(job);
+    let [taken] = await q.take(10);
+    expect(taken).toEqual({ ...job, attempts: 0 });
+    await q.retry(taken!);
+    await q.add(job); // 已在队列：不清零
+    [taken] = await q.take(10);
+    expect(taken!.attempts).toBe(1);
+    for (let i = 1; i < HISTORY_MAX_ATTEMPTS; i++) {
+      [taken] = await q.take(10);
+      await q.retry(taken!);
+    }
+    expect(await q.take(10)).toEqual([]);
+    await q.add(job);
+    await q.done((await q.take(10))[0]!);
+    expect(kv.map.size).toBe(0);
+  });
+
+  it('ignores malformed entries', async () => {
+    const kv = fakeKv();
+    kv.map.set('q:ly:x:2025-10-20', { value: '1', metadata: { cityId: 'x' } });
+    expect(await new KvHistoryQueue(kv as unknown as KVNamespace).take(10)).toEqual([]);
+  });
+});
+
+describe('past days of this year (Darren 2026-10-29: past 7 days instead of the next 15)', () => {
+  it('uses only days that were over when fetched, and refreshes the recent block after local midnight', async () => {
+    let now = Date.UTC(2026, 9, 22, 3); // 伦敦 10-22 04:00
+    const calls: string[] = [];
+    const history: PastWeatherSource = { name: 'owm', slow: true, days: async (lat, lon, start) => (calls.push(start), new MockHistory().days(lat, lon, start)) };
+    const queue = new MemoryHistoryQueue();
+    const store = new MemoryStore(() => now);
+    const make = () => new WeatherService(new MockProvider(() => now), store, () => now, () => undefined, 0, undefined, undefined, history, undefined, queue);
+
+    await make().cityBundle('102643743');
+    await make().drainHistoryQueue();
+    let b = await make().cityBundle('102643743');
+    expect(b.missing).not.toContain('lastYearPending');
+    // 今天（10-22）还没过完：即使数据源给了，也不当作实际
+    expect(Object.keys(b.pastWeek!.data).at(-1)).toBe('2026-10-21');
+    expect(b.pastWeek!.data['2026-10-22']).toBeUndefined();
+    expect(queue.jobs.size).toBe(0);
+
+    // 第二天当地 04:00：含昨天的块过期 → 先用旧的（到 10-21），同时排队更新；不算"正在准备"
+    now += 86400_000;
+    const before = calls.length;
+    b = await make().cityBundle('102643743');
+    expect(b.missing).not.toContain('lastYearPending');
+    expect(Object.keys(b.pastWeek!.data).at(-1)).toBe('2026-10-21');
+    expect(queue.jobs.size).toBeGreaterThanOrEqual(1);
+    expect([...queue.jobs.values()].every((j) => j.tz === 'Europe/London')).toBe(true);
+    await make().drainHistoryQueue();
+    expect(calls.length - before).toBeGreaterThanOrEqual(1);
+    expect(queue.jobs.size).toBe(0);
+    b = await make().cityBundle('102643743');
+    expect(b.pastWeek!.data['2026-10-22']?.date).toBe('2026-10-22');
+    // 去年的块没有重新取
+    expect(calls.slice(before).every((s) => s.startsWith('2026-'))).toBe(true);
+  });
+});
+
+describe('when recent history expires', () => {
+  const tz = 'Europe/London';
+  it('expires the block holding recent days 2 hours after local midnight, never sooner than the day is over', () => {
+    // 10-22 10:00 BST 取的：明天 02:00 BST 过期
+    expect(historyFreshUntil('2026-10-20', tz, Date.UTC(2026, 9, 22, 9))).toBe(Date.UTC(2026, 9, 23, 1));
+    // 10-22 00:30 BST 取的（昨天还没齐）：今天 02:00 BST 就过期
+    expect(historyFreshUntil('2026-10-20', tz, Date.UTC(2026, 9, 21, 23, 30))).toBe(Date.UTC(2026, 9, 22, 1));
+    // 两天以前就结束的块：永久
+    expect(historyFreshUntil('2026-10-10', tz, Date.UTC(2026, 9, 22, 9)) - Date.UTC(2026, 9, 22, 9)).toBe(DATA_TTL.lastYear * 1000);
+    // UTC+14、UTC−11
+    expect(historyFreshUntil('2026-10-20', 'Pacific/Kiritimati', Date.UTC(2026, 9, 22, 9))).toBe(Date.UTC(2026, 9, 22, 12)); // 当地 10-22 23:00 → 10-23 02:00
+    expect(historyFreshUntil('2026-10-20', 'Pacific/Pago_Pago', Date.UTC(2026, 9, 22, 9))).toBe(Date.UTC(2026, 9, 22, 13)); // 当地 10-21 22:00 → 10-22 02:00
+  });
+
+  it('keeps the expired block a few days for cities nobody opened that night, and stops queuing after the job gave up', async () => {
+    let now = Date.UTC(2026, 9, 22, 3);
+    let failing = false;
+    const history: PastWeatherSource = {
+      name: 'owm',
+      slow: true,
+      days: async (lat, lon, start) => {
+        if (failing) throw new ProviderError('busy', 503);
+        return new MockHistory().days(lat, lon, start);
+      },
+    };
+    const queue = new MemoryHistoryQueue();
+    const store = new MemoryStore(() => now);
+    const make = () => new WeatherService(new MockProvider(() => now), store, () => now, () => undefined, 0, undefined, undefined, history, undefined, queue);
+    await make().cityBundle('102643743');
+    await make().drainHistoryQueue();
+
+    // 第二天 10:00 才有人打开（过期 8 小时后）：旧数据还在，不算"正在准备"
+    now = Date.UTC(2026, 9, 23, 9);
+    const b = await make().cityBundle('102643743');
+    expect(b.missing).not.toContain('lastYearPending');
+    expect(Object.keys(b.pastWeek!.data).length).toBeGreaterThanOrEqual(7);
+    expect(queue.jobs.size).toBeGreaterThanOrEqual(1);
+
+    // 更新一直失败，试满次数后放弃：之后打开页面也不再放回队列
+    failing = true;
+    for (let i = 0; i < HISTORY_MAX_ATTEMPTS; i++) await make().drainHistoryQueue();
+    expect(queue.jobs.size).toBe(0);
+    const adds = queue.adds;
+    await make().cityBundle('102643743');
+    expect(queue.adds).toBe(adds);
+  });
+});

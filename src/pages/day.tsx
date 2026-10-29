@@ -1,5 +1,3 @@
-import { CLIMATE_LEVEL_COLORS } from '../config/features';
-import { climateTone, wordingKey } from '../features/climate';
 import { intlLocale, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { cityPath } from '../routing/urls';
@@ -9,7 +7,7 @@ import type { DailyPoint } from '../weather/types';
 import { AdSlot, DASH, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, SubBar, Temp } from './components';
 import { G } from './glyphs';
 import { placeholderDayHours } from './placeholders';
-import { cityPageData, Compass, DayRow, Delta, devNote, HourlyStrip, Jump, pageSky, rich, type PageProps } from './home';
+import { cityPageData, Compass, DayRow, devNote, HourlyStrip, Jump, pageSky, rich, type PageProps } from './home';
 
 /** 日期："10月27日 星期二"之类，按语言格式化 */
 export function longDate(date: string, lang: Lang): string {
@@ -57,7 +55,6 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
   const loc = bundle.location;
   const sub = p.offset === 1 ? 'tomorrow' : 'day-after';
   const title = p.offset === 1 ? t(lang, 'TomorrowLabel') : weekdayLabel(d?.date ?? bundle.today, intlLocale(lang), 'long');
-  const point = features.series[p.offset];
   const realHours = (bundle.hourly?.data ?? []).filter((h) => d && h.time.startsWith(d.date));
   // 逐小时预报覆盖不到这一天时用占位小时，区块不消失
   const hours = realHours.length > 0 || !d ? realHours : placeholderDayHours(d.date, loc.timezone);
@@ -84,26 +81,12 @@ export function DayPage(p: PageProps & { offset: 1 | 2 }) {
               <span class="sep">/</span>
               <Temp c={d.minTemp} />
             </p>
-            {point?.delta !== null && point?.delta !== undefined && point.level ? (
-              <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style={`--lv:${CLIMATE_LEVEL_COLORS[point.level]}`}>
-                <i />
-                <span>
-                  {point.level === 'normal'
-                    ? t(lang, 'ClimateLabel_normal')
-                    : rich(lang, `ClimateLabel_${wordingKey(point.level, climateTone(point.avgMaxTemp ?? 15))}`, { delta: <Delta c={point.delta} /> })}
-                </span>
-                {G.chevron('flip')}
-              </a>
-            ) : (
-              // 没有往年数据时保留同样大小的标签，页面不跳
-              <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style="--lv:var(--faint)">
-                <i />
-                <span>
-                  {t(lang, 'ClimateTitle')} {DASH}
-                </span>
-                {G.chevron('flip')}
-              </a>
-            )}
+            {/* 明天、后天不显示去年那天的温度（那是以后的题的答案，Darren 2026-10-29），只引导去猜今天 */}
+            <a class="vs" data-nav href={cityPath(channel, lang, loc.id, 'climate')} style="--lv:var(--faint)">
+              <i />
+              <span>{t(lang, 'ClimateTeaser')}</span>
+              {G.chevron('flip')}
+            </a>
           </section>
           <EarlyUnits />
 

@@ -42,8 +42,8 @@ export const DATA_TTL = {
   daily: 3 * HOUR,
   /** 空气质量本身是预报，3 小时取一次足够（2026-10-27 从 1 小时改） */
   airQuality: 3 * HOUR,
-  climateDaily: 365 * DAY,
-  climateMonthly: 30 * DAY,
+  /** 去年同一天的实际天气（OpenWeather）：过去的数据不会变，存一年多 */
+  lastYear: 400 * DAY,
   nowcastRadar: 10 * MINUTE,
   nowcastModel: 30 * MINUTE,
 } as const;

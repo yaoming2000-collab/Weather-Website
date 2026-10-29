@@ -1,17 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
-  answerOf,
-  climateLabel,
-  climateLevel,
-  climateSeries,
-  climateTone,
-  compareToday,
-  interpolateClimate,
-  monthRainDays,
-  rainComparison,
-  wordingKey,
-} from '../src/features/climate';
-import type { ClimateDay, ClimateMonth, DailyPoint } from '../src/weather/types';
+import { answerOf, climateLabel, climateLevel, climateTone, compareToday, pastSeries, rainComparison, wordingKey } from '../src/features/climate';
+import { withFrozenComparison } from '../src/features';
+import { cleanDays, historyBlockStart, iconOfWeatherId, lastYearDate, type PastDay } from '../src/weather/history';
+import type { DailyPoint } from '../src/weather/types';
 
 function day(date: string, maxTemp: number | null, extra: Partial<DailyPoint> = {}): DailyPoint {
   return {
@@ -30,14 +21,9 @@ function day(date: string, maxTemp: number | null, extra: Partial<DailyPoint> = 
   };
 }
 
-/** 每月平均最高温 = 月份 × 2（1 月 2°，12 月 24°），每月下雨 15 天 */
-const MONTHS: ClimateMonth[] = Array.from({ length: 12 }, (_, i) => ({
-  month: i + 1,
-  avgMaxTemp: (i + 1) * 2,
-  avgMinTemp: (i + 1) * 2 - 8,
-  precipSum: 60,
-  rainDays: 15,
-}));
+function past(date: string, maxTemp: number | null, wet = false): PastDay {
+  return { date, maxTemp, minTemp: maxTemp === null ? null : maxTemp - 6, icon: wet ? 'rainy-light' : 'sunny', wet };
+}
 
 function dates(start: string, n: number): string[] {
   const t = Date.parse(`${start}T12:00:00Z`);
@@ -45,7 +31,7 @@ function dates(start: string, n: number): string[] {
 }
 
 describe('levels and wording', () => {
-  it('grades the difference from usual (°C)', () => {
+  it('grades the difference from last year (°C)', () => {
     expect(climateLevel(6)).toBe('much-warmer');
     expect(climateLevel(5.9)).toBe('warmer');
     expect(climateLevel(2)).toBe('warmer');
@@ -64,7 +50,7 @@ describe('levels and wording', () => {
     expect(answerOf('normal')).toBe('same');
   });
 
-  it('picks words by the usual climate of the city', () => {
+  it('picks words by how warm it was last year', () => {
     expect(climateTone(22)).toBe('hot');
     expect(climateTone(21.9)).toBe('mild');
     expect(climateTone(12)).toBe('cold');
@@ -75,83 +61,150 @@ describe('levels and wording', () => {
   });
 });
 
-describe('today vs usual', () => {
-  const climate: ClimateDay = { monthDay: '10-22', avgMaxTemp: 18.4, avgMinTemp: 9.1, avgTemp: 13 };
-
-  it('compares the forecast high with the usual high for the date', () => {
-    const c = compareToday(day('2026-10-22', 24.6, { minTemp: 10 }), climate)!;
-    expect(c.deltaMax).toBe(6.2);
-    expect(c.deltaMin).toBe(0.9);
-    expect(c.level).toBe('much-warmer');
-    expect(c.tone).toBe('mild');
+describe('today vs the same day last year', () => {
+  it('compares the forecast high with last year\'s actual high', () => {
+    const c = compareToday(day('2026-10-22', 24.4), past('2025-10-22', 19))!;
+    expect(c.deltaMax).toBe(5.4);
+    expect(c.level).toBe('warmer');
     expect(c.answer).toBe('warmer');
+    expect(c.lastMaxTemp).toBe(19);
+    expect(c.lastIcon).toBe('sunny');
+    expect(c.tone).toBe('mild');
     expect(c.wording).toBe('warmer_mild');
   });
 
-  it('returns nothing when data is missing, so the page hides the label', () => {
-    expect(compareToday(undefined, climate)).toBeNull();
-    expect(compareToday(day('2026-10-22', null), climate)).toBeNull();
-    expect(compareToday(day('2026-10-22', 20), null)).toBeNull();
-    expect(compareToday(day('2026-10-22', 20), { ...climate, avgMaxTemp: null })).toBeNull();
+  it('returns nothing when either side is missing', () => {
+    expect(compareToday(day('2026-10-22', null), past('2025-10-22', 19))).toBeNull();
+    expect(compareToday(day('2026-10-22', 20), past('2025-10-22', null))).toBeNull();
+    expect(compareToday(day('2026-10-22', 20), undefined)).toBeNull();
   });
 });
 
-describe('15-day comparison', () => {
-  it('uses the monthly value in the middle of the month and wraps December to January', () => {
-    expect(interpolateClimate(MONTHS, '2026-01-16')!.avgMaxTemp).toBe(2);
-    expect(interpolateClimate(MONTHS, '2026-06-15')!.avgMaxTemp).toBe(12);
-    // 1 月 1 日在 12 月中（24°）和 1 月中（2°）之间
-    const jan1 = interpolateClimate(MONTHS, '2026-01-01')!.avgMaxTemp!;
-    expect(jan1).toBeGreaterThan(2);
-    expect(jan1).toBeLessThan(24);
-    expect(interpolateClimate(MONTHS.slice(1), '2026-01-01')).toBeNull();
+describe('past 7 days: this year vs last year', () => {
+  const thisYear = (ds: string[], t: (i: number) => number | null) => Object.fromEntries(ds.map((d, i) => [d, past(d, t(i))]));
+
+  it('ends yesterday and pairs each day with the same day last year (never today or later)', () => {
+    const ds = dates('2026-10-15', 7); // 10-15 … 10-21
+    const now = thisYear(ds, () => 18);
+    const ly: Record<string, PastDay> = { [ds[6]!]: past('2025-10-21', 20), [ds[0]!]: past('2025-10-15', 10) };
+    const s = pastSeries('2026-10-22', now, ly, 7);
+    expect(s.map((p) => p.date)).toEqual(ds);
+    expect(s[0]!.delta).toBe(8);
+    expect(s[6]!.delta).toBe(-2);
+    expect(s[6]!.level).toBe('cooler');
+    expect(s[3]!.delta).toBeNull();
   });
 
-  it('anchors the curve on the exact usual value for today', () => {
-    const ds = dates('2026-10-16', 3);
-    const today: ClimateDay = { monthDay: '10-16', avgMaxTemp: 25, avgMinTemp: 15, avgTemp: 20 };
-    const series = climateSeries(ds.map((d) => day(d, 25)), MONTHS, today);
-    expect(series[0]!.avgMaxTemp).toBe(25);
-    expect(series[0]!.delta).toBe(0);
-    // 10 月中插值为 20°，今天实际 25° → 之后几天整体平移 +5°
-    expect(series[1]!.avgMaxTemp).toBeCloseTo(20 + 5 + (2 / 31) * 1, 0);
-    expect(series[1]!.level).toBe('normal');
-  });
-
-  it('still draws the curve without the daily climate value', () => {
-    const series = climateSeries([day('2026-10-16', 30)], MONTHS, null);
-    expect(series[0]!.avgMaxTemp).toBe(20);
-    expect(series[0]!.level).toBe('much-warmer');
+  it('moves back a day while yesterday is not in yet', () => {
+    const ds = dates('2026-10-14', 7); // 到 10-20，10-21 还没有
+    const s = pastSeries('2026-10-22', thisYear(ds, () => 18), {}, 7);
+    expect(s.at(-1)!.date).toBe('2026-10-20');
+    // 两天都没有（例如还在准备）：仍然按昨天排，显示 "--"
+    expect(pastSeries('2026-10-22', {}, {}, 7).at(-1)!.date).toBe('2026-10-21');
   });
 });
 
 describe('rain comparison', () => {
-  it('scales monthly rainy days to the forecast period and counts forecast rainy days', () => {
-    const ds = dates('2026-10-22', 15);
-    const daily = ds.map((d, i) => day(d, 20, { precipProb: i < 4 ? 50 : 49 }));
-    // 15 天全在 10 月（下旬到 11 月初）：10 月 10 天 × 15/31 + 11 月 5 天 × 15/30 ≈ 7.3
-    expect(rainComparison(daily, MONTHS)).toEqual({ days: 15, usualRainyDays: 7, forecastRainyDays: 4 });
-    expect(rainComparison(daily, null)).toBeNull();
-    expect(monthRainDays(MONTHS, '2026-10-22')).toBe(15);
+  it('counts rainy days this year and last year over the same days', () => {
+    const ds = dates('2026-10-15', 7);
+    const now = Object.fromEntries(ds.map((d, i) => [d, past(d, 20, i < 2)]));
+    const ly = Object.fromEntries(ds.map((d, i) => [d, past(d, 20, i < 4)]));
+    expect(rainComparison(ds, now, ly)).toEqual({ days: 7, lastYearRainyDays: 4, thisYearRainyDays: 2 });
+  });
+
+  it('gives up when most days have no data', () => {
+    const ds = dates('2026-10-15', 7);
+    const ly = { [ds[0]!]: past(ds[0]!, 20, true) };
+    expect(rainComparison(ds, ly, ly)).toBeNull();
+    expect(rainComparison(ds, null, ly)).toBeNull();
   });
 });
 
-describe('home label', () => {
-  const ds = dates('2026-10-22', 7);
-  const calmSeries = climateSeries(ds.map((d) => day(d, 20.5)), MONTHS, { monthDay: '10-22', avgMaxTemp: 20, avgMinTemp: 12, avgTemp: 16 });
-  const normal = compareToday(day(ds[0]!, 20.5), { monthDay: '10-22', avgMaxTemp: 20, avgMinTemp: 12, avgTemp: 16 });
-
-  it('switches tropical cities with a calm week to the rain message', () => {
-    const label = climateLabel({ lat: 10.8 }, normal, calmSeries, MONTHS);
-    expect(label).toMatchObject({ mode: 'rain', rainDays: 15 });
+describe('home label and frozen answer', () => {
+  it('labels only when there is a comparison', () => {
+    expect(climateLabel(null)).toBeNull();
+    const c = compareToday(day('2026-10-22', 20), past('2025-10-22', 20))!;
+    expect(climateLabel(c)).toEqual({ mode: 'temperature', comparison: c });
   });
 
-  it('keeps the temperature label outside the tropics, in deserts, or when today is unusual', () => {
-    expect(climateLabel({ lat: 40 }, normal, calmSeries, MONTHS)?.mode).toBe('temperature');
-    const dry = MONTHS.map((m) => ({ ...m, rainDays: 1 }));
-    expect(climateLabel({ lat: 10.8 }, normal, calmSeries, dry)?.mode).toBe('temperature');
-    const hot = compareToday(day(ds[0]!, 25), { monthDay: '10-22', avgMaxTemp: 20, avgMinTemp: 12, avgTemp: 16 });
-    expect(climateLabel({ lat: 10.8 }, hot, calmSeries, MONTHS)?.mode).toBe('temperature');
-    expect(climateLabel({ lat: 10.8 }, null, calmSeries, MONTHS)).toBeNull();
+  it('uses the answer fixed earlier in the day', () => {
+    const ly = past('2025-10-22', 15);
+    const now = compareToday(day('2026-10-22', 16), ly)!;
+    const morning = compareToday(day('2026-10-22', 19), ly)!;
+    const f = withFrozenComparison({ comparison: now, label: climateLabel(now), series: [], rain: null, nowcast: null, life: [], days: [] }, morning);
+    expect(f.comparison!.answer).toBe('warmer');
+    expect(f.label!.comparison.deltaMax).toBe(4);
+  });
+});
+
+describe('last year data from OpenWeather', () => {
+  it('uses Feb 28 last year for Feb 29', () => {
+    expect(lastYearDate('2028-02-29')).toBe('2027-02-28');
+    expect(lastYearDate('2026-10-28')).toBe('2025-10-28');
+  });
+
+  it('aligns 10-day blocks the same way everywhere', () => {
+    const a = historyBlockStart('2025-10-28');
+    const t = (Date.parse('2025-10-28') - Date.parse(a)) / 86400_000;
+    expect(t).toBeGreaterThanOrEqual(0);
+    expect(t).toBeLessThan(10);
+    const plus = (n: number) => new Date(Date.parse(a) + n * 86400_000).toISOString().slice(0, 10);
+    expect(historyBlockStart(plus(9))).toBe(a);
+    expect(historyBlockStart(plus(10))).toBe(plus(10));
+  });
+
+  it('drops a day that repeats the previous one exactly', () => {
+    const days = cleanDays([past('2025-10-27', 9.2), { ...past('2025-10-28', 8.13), icon: 'rainy-light' }, { ...past('2025-10-29', 8.13), icon: 'rainy-light' }]);
+    expect(days[1]!.maxTemp).toBe(8.13);
+    expect(days[2]!.maxTemp).toBeNull();
+    expect(days[2]!.icon).toBe('');
+  });
+
+  it('maps weather codes to our icons', () => {
+    expect(iconOfWeatherId(800)).toBe('sunny');
+    expect(iconOfWeatherId(803)).toBe('mostly-cloudy');
+    expect(iconOfWeatherId(500)).toBe('rainy-light');
+    expect(iconOfWeatherId(211)).toBe('stormy-rain-medium');
+    expect(iconOfWeatherId(601)).toBe('snowy-moderate');
+    expect(iconOfWeatherId(741)).toBe('foggy');
+  });
+});
+
+describe('OpenWeather replies', () => {
+  const reply = (days: number, from = '2025-10-28', status = 200) => async () =>
+    new Response(
+      JSON.stringify({ data: Array.from({ length: days }, (_, i) => ({ dt: Date.parse(`${from}T00:00:00Z`) / 1000 + i * 86400, temp: { max: 10 + i, min: i }, weather: [{ id: 800 }] })) }),
+      { status },
+    );
+
+  it('accepts a full 10-day block', async () => {
+    const { OpenWeatherHistory } = await import('../src/weather/history');
+    const days = await new OpenWeatherHistory('k', reply(10)).days(1, 2, '2025-10-28');
+    expect(days).toHaveLength(10);
+    expect(days[0]!.date).toBe('2025-10-28');
+  });
+
+  it('refuses to cache a short or shifted reply, and treats 400 as "not available"', async () => {
+    const { OpenWeatherHistory } = await import('../src/weather/history');
+    await expect(new OpenWeatherHistory('k', reply(3)).days(1, 2, '2025-10-28')).rejects.toMatchObject({ status: 502 });
+    await expect(new OpenWeatherHistory('k', reply(10, '2025-10-27')).days(1, 2, '2025-10-28')).rejects.toMatchObject({ status: 502 });
+    await expect(new OpenWeatherHistory('k', reply(0, '2025-10-28', 400)).days(1, 2, '2025-10-28')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('accepts fewer than 10 days for a block that runs into the future, if it reaches the present', async () => {
+    const { OpenWeatherHistory } = await import('../src/weather/history');
+    const now = () => Date.UTC(2026, 9, 29, 6);
+    // 10-27 起的块：到 10-29（今天）就停了
+    const days = await new OpenWeatherHistory('k', reply(3, '2026-10-27'), 1000, now).days(1, 2, '2026-10-27');
+    expect(days).toHaveLength(3);
+    // 没到现在的短回复仍然拒绝
+    await expect(new OpenWeatherHistory('k', reply(1, '2026-10-20'), 1000, now).days(1, 2, '2026-10-20')).rejects.toMatchObject({ status: 502 });
+  });
+
+  it('uses the answer fixed earlier when today cannot be computed now', () => {
+    const c = compareToday(day('2026-10-22', 20), past('2025-10-22', 15))!;
+    const f = withFrozenComparison({ comparison: null, label: null, series: [], rain: null, nowcast: null, life: [], days: [] }, c);
+    expect(f.comparison).toBe(c);
+    expect(f.label?.comparison).toBe(c);
   });
 });

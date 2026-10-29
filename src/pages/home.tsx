@@ -25,6 +25,7 @@ import {
 import { shouldFetchNowcast, type CityBundle } from '../weather/service';
 import type { DailyPoint, HourlyPoint } from '../weather/types';
 import { AdSlot, DASH, Distance, EarlyTime, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
+import { raw } from 'hono/html';
 import { G } from './glyphs';
 import { isPlaceholder } from './placeholders';
 import { computeSky, displayIcon, type Sky } from './sky';
@@ -267,36 +268,62 @@ function LifeRow(props: { p: PageProps }) {
   );
 }
 
-/** 顶部"比往年同期暖 6°"标签 */
+/**
+ * 猜过之后才把首页标签换成结果（首次绘制前做，见 GUESS_TAG_SCRIPT；页面更新后由 client/main.ts revealGuessTags 再做一次）。
+ * 猜一猜的记录在 localStorage weather.guess.v2（client/lib/interact.ts GUESS_KEY），键是"城市|日期"。
+ */
+export const GUESS_TAG_SCRIPT = `(function(){try{var b=JSON.parse(localStorage.getItem('weather.guess.v2')||'{}');
+var t=document.querySelectorAll('[data-guess-tag]');for(var i=0;i<t.length;i++){var a=t[i];if(!b[a.getAttribute('data-guess-tag')])continue;
+var tpl=a.querySelector('template');var s=a.querySelector('[data-tag-text]');if(!tpl||!s)continue;s.innerHTML=tpl.innerHTML;a.style.setProperty('--lv',a.getAttribute('data-result-color'));a.removeAttribute('data-guess-tag')}}catch(e){}})()`;
+
+/**
+ * 顶部"比去年今天热 2°"标签。
+ * 没猜之前只显示"今天比去年热还是冷？猜一猜"（不提前说答案，Darren 2026-10-28）；猜过之后显示结果。
+ * 结果放在 <template> 里，由脚本换上去。
+ */
 export function ClimateTag(props: { p: PageProps }) {
   const { p } = props;
   const label = p.features.label;
   const href = cityPath(p.channel, p.lang, p.bundle.location.id, 'climate');
-  // 没有往年数据时保留同样大小的标签（"今天 vs 往年 --"），点进去看原因
+  // 还没有题（去年数据在准备，或这个城市一直没有）：显示"还记得去年今天的天气吗？"，点进去看原因
   if (!label) {
+    // 一直没有去年数据（不是临时取不到）：今天没出题，连续猜对天数不算断（client/main.ts markSkippedDay）
+    const transient = p.bundle.missing.some((m) => m === 'lastYear' || m === 'daily');
+    const skip = transient ? {} : { 'data-no-question': '', 'data-city': p.bundle.location.id, 'data-date': p.bundle.today };
     return (
-      <a class="vs" data-nav href={href} style="--lv:var(--faint)">
+      // 文案邀请点进去（Darren 2026-10-29）；放不下时在胶囊里滚动（client/main.ts setupMarquee）
+      <a class="vs" data-nav href={href} style="--lv:var(--faint)" {...skip}>
         <i />
-        <span>
-          {t(p.lang, 'ClimateTitle')} {DASH}
+        <span class="mq" data-marquee>
+          <span class="mq-in">{t(p.lang, 'ClimateRemember')}</span>
         </span>
         {G.chevron('flip')}
       </a>
     );
   }
   const c = label.comparison;
-  const text =
-    label.mode === 'rain'
-      ? t(p.lang, 'ClimateLabel_rain', { n: label.rainDays })
-      : rich(p.lang, `ClimateLabel_${c.wording}`, { delta: <Delta c={c.deltaMax} /> });
   return (
-    <a class="vs" data-nav href={href} style={`--lv:${label.mode === 'rain' ? 'var(--rain)' : CLIMATE_LEVEL_COLORS[c.level]}`}>
-      <i />
-      <span>{text}</span>
-      {G.chevron('flip')}
-    </a>
+    <>
+      <a
+        class="vs"
+        data-nav
+        href={href}
+        style="--lv:var(--faint)"
+        data-guess-tag={`${p.bundle.location.id}|${c.date}`}
+        data-result-color={CLIMATE_LEVEL_COLORS[c.level]}
+      >
+        <i />
+        <span data-tag-text>{t(p.lang, 'ClimateTeaser')}</span>
+        <template>{rich(p.lang, `ClimateLabel_${c.wording}`, { delta: <Delta c={c.deltaMax} /> })}</template>
+        {G.chevron('flip')}
+      </a>
+      <script>{raw(GUESS_TAG_SCRIPT)}</script>
+    </>
   );
 }
+
+const JUMP_SCRIPT = `(function(){try{var n=document.querySelectorAll('[data-jump]');var nav=n[n.length-1];var a=nav&&nav.querySelector('[aria-current]');if(!a)return;
+var r=a.getBoundingClientRect(),b=nav.getBoundingClientRect();nav.scrollLeft+=r.left+r.width/2-(b.left+b.width/2)}catch(e){}})()`;
 
 /** 今天、明天、后天、7 天的快捷入口；在子页里标出当前页 */
 export function Jump(props: { p: PageProps; active?: 'tomorrow' | 'day-after' | 'week' }) {
@@ -317,16 +344,29 @@ export function Jump(props: { p: PageProps; active?: 'tomorrow' | 'day-after' | 
       </a>
     ) : null;
   const after = days[2];
+  // 7 天胶囊和其他胶囊一样：图标 + 这 7 天的最高 / 最低
+  const week = days.slice(0, 7);
+  const highs = week.map((d) => d.maxTemp).filter((v): v is number => v !== null);
+  const lows = week.map((d) => d.minTemp).filter((v): v is number => v !== null);
   return (
-    <nav class="jump">
-      {active ? pill(days[0], '', t(p.lang, 'TodayLabel')) : null}
-      {pill(days[1], 'tomorrow', t(p.lang, 'TomorrowLabel'))}
-      {pill(after, 'day-after', after ? <span data-weekday={after.date}>{weekdayLabel(after.date, intlLocale(p.lang), 'long')}</span> : '')}
-      <a data-nav href={cityPath(p.channel, p.lang, id, 'week')} {...cur('week')}>
-        <span>{t(p.lang, 'WeekOverview')}</span>
-        {G.chevron()}
-      </a>
-    </nav>
+    <>
+      <nav class="jump" data-jump>
+        {active ? pill(days[0], '', t(p.lang, 'TodayLabel')) : null}
+        {pill(days[1], 'tomorrow', t(p.lang, 'TomorrowLabel'))}
+        {pill(after, 'day-after', after ? <span data-weekday={after.date}>{weekdayLabel(after.date, intlLocale(p.lang), 'long')}</span> : '')}
+        <a data-nav href={cityPath(p.channel, p.lang, id, 'week')} {...cur('week')}>
+          <span>{t(p.lang, 'WeekOverview')}</span>
+          <span class="wk-ico">{G.calendar()}</span>
+          <span class="hl">
+            <Temp c={highs.length ? Math.max(...highs) : null} />
+            {' / '}
+            <Temp c={lows.length ? Math.min(...lows) : null} />
+          </span>
+        </a>
+      </nav>
+      {/* 选中的胶囊滚到可见位置（首次绘制前做，看不到滚动） */}
+      {active ? <script>{raw(JUMP_SCRIPT)}</script> : null}
+    </>
   );
 }
 
@@ -457,10 +497,10 @@ export function HomePage(p: PageProps) {
         <Nowcast f={features} lang={lang} fallback={nowcastFallback} />
       </div>
 
-      <a class="card" data-live="hourly" data-nav href={cityPath(channel, lang, loc.id, 'hourly')}>
-        <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} more={t(lang, 'SeeHourlyDetails')} />
+      <section class="card" data-live="hourly">
+        <Sec icon={G.clock()} title={t(lang, 'HourlyForecastTitle')} more={t(lang, 'SeeHourlyDetails')} href={cityPath(channel, lang, loc.id, 'hourly')} />
         <HourlyStrip hours={(hourly?.data ?? []).slice(0, HOURS_SHOWN)} days={days} lang={lang} nowMs={p.nowMs} />
-      </a>
+      </section>
       <EarlyTime />
 
       <AdSlot slot="home_1" height={100} lang={lang} />

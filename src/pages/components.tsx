@@ -3,7 +3,7 @@ import { raw } from 'hono/html';
 import type { Channel } from '../config/channels';
 import { intlLocale, textDirection, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
-import { citiesPath, cityPath } from '../routing/urls';
+import { citiesPath, cityPath, settingsPath } from '../routing/urls';
 import { iconImage, iconSrcset } from '../weather/icons';
 import { EARLY_TIME_SCRIPT, EARLY_UNITS_SCRIPT } from '../config/units';
 import type { WeatherLocation } from '../weather/types';
@@ -238,17 +238,29 @@ export function SkyLayers(props: { sky: Sky }) {
 }
 
 /** 卡片标题：小图标 + 标题，右侧可选"查看更多" */
-export function Sec(props: { icon: Child; title: string; more?: string; tag?: 'h2' | 'h3' }) {
+/**
+ * 卡片标题。more 是右侧的"查看更多"；给了 href 时它本身是链接（整张卡片不是链接时用，
+ * 例如逐小时卡片：卡片里要左右滑动，整张卡片做成链接在 iPhone 上会抢走滑动）。
+ */
+export function Sec(props: { icon: Child; title: string; more?: string; href?: string; tag?: 'h2' | 'h3' }) {
+  const more = props.more ? (
+    props.href ? (
+      <a class="go" data-nav href={props.href}>
+        {props.more}
+        {G.chevron('flip')}
+      </a>
+    ) : (
+      <span class="go">
+        {props.more}
+        {G.chevron('flip')}
+      </span>
+    )
+  ) : null;
   const inner = (
     <>
       {props.icon}
       <span>{props.title}</span>
-      {props.more ? (
-        <span class="go">
-          {props.more}
-          {G.chevron('flip')}
-        </span>
-      ) : null}
+      {more}
     </>
   );
   return props.tag === 'h3' ? <h3 class="sec">{inner}</h3> : <h2 class="sec">{inner}</h2>;
@@ -258,23 +270,22 @@ export function Sec(props: { icon: Child; title: string; more?: string; tag?: 'h
 export function TopBar(props: { location: WeatherLocation; channel: Channel; lang: Lang }) {
   const { location: loc, lang } = props;
   return (
-    <header class="top">
-      <div class="place">
-        <h1>
-          {G.pin()}
-          <span>{loc.name}</span>
-        </h1>
-        <div class="region">{[loc.adminArea, loc.country].filter((x) => x && x !== loc.name).join(', ')}</div>
+    <header class="top city-top">
+      {/* 第一行城市名（固定 28px，太长时换行、不缩小）+ 右边按钮；第二行地区，紧贴城市名（Darren 2026-10-29） */}
+      <h1 class="city-name">
+        {G.pin()}
+        <span>{loc.name}</span>
+      </h1>
+      <div class="region">{[loc.adminArea, loc.country].filter((x) => x && x !== loc.name).join(', ')}</div>
+      <div class="top-btns">
+        <SettingsLink channel={props.channel} lang={lang} />
+        <button class="btn" type="button" data-save aria-pressed="false" aria-label={t(lang, 'AddToMyCities')}>
+          {G.star()}
+        </button>
+        <a class="btn" data-nav href={citiesPath(props.channel, lang)} aria-label={t(lang, 'MyCitiesTitle')}>
+          {G.list()}
+        </a>
       </div>
-      <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(lang, 'UnitsTitle')}>
-        °C
-      </button>
-      <button class="btn" type="button" data-save aria-pressed="false" aria-label={t(lang, 'AddToMyCities')}>
-        {G.star()}
-      </button>
-      <a class="btn" data-nav href={citiesPath(props.channel, lang)} aria-label={t(lang, 'MyCitiesTitle')}>
-        {G.list()}
-      </a>
     </header>
   );
 }
@@ -292,10 +303,17 @@ export function SubBar(props: { location: WeatherLocation; channel: Channel; lan
           <span>{props.title}</span>
         </h1>
       </div>
-      <button class="btn" dir="ltr" type="button" data-units-toggle aria-label={t(props.lang, 'UnitsTitle')}>
-        °C
-      </button>
+      <SettingsLink channel={props.channel} lang={props.lang} />
     </header>
+  );
+}
+
+/** 顶部齿轮：进入设置页（语言、温度单位、风速单位） */
+export function SettingsLink(props: { channel: Channel; lang: Lang }) {
+  return (
+    <a class="btn" data-nav data-settings href={settingsPath(props.channel, props.lang)} aria-label={t(props.lang, 'SettingsTitle')}>
+      {G.gear()}
+    </a>
   );
 }
 
@@ -339,6 +357,11 @@ export function clientStrings(lang: Lang): Record<string, string> {
     'UpdatedJustNow',
     'UpdatedMinutesAgo',
     'UpdatedHoursAgo',
+    'StreakCurrent',
+    'StreakBeforeGuess',
+    'StreakRestart',
+    'StreakBest',
+    'StreakBroken',
     'OfflineNotice',
     'StorageUnavailable',
     'AddToMyCities',

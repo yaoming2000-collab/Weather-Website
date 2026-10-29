@@ -6,12 +6,14 @@ import { MemoryFeatureStore } from '../src/features/store';
 import { MockProvider } from '../src/weather/mock';
 import { ProviderError, type WeatherProvider } from '../src/weather/provider';
 import { WeatherService } from '../src/weather/service';
+import { MockHistory, type PastWeatherSource } from '../src/weather/history';
+import { MemoryHistoryQueue } from '../src/weather/historyQueue';
 
 const NOW = Date.UTC(2026, 9, 22, 3, 0);
 
-function app(provider: WeatherProvider = new MockProvider(() => NOW)) {
+function app(provider: WeatherProvider = new MockProvider(() => NOW), history: PastWeatherSource | null = new MockHistory()) {
   return createApp({
-    weather: () => new WeatherService(provider, new MemoryStore(() => NOW), () => NOW, () => undefined),
+    weather: () => new WeatherService(provider, new MemoryStore(() => NOW), () => NOW, () => undefined, undefined, undefined, undefined, history ?? undefined),
     features: () => new MemoryFeatureStore(),
   });
 }
@@ -97,7 +99,7 @@ describe('city page', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('<meta name="robots" content="noindex"/>');
-    expect(html).toMatch(/<h1>.*?<span>Cheney<\/span><\/h1>/s);
+    expect(html).toMatch(/<h1 class="city-name">.*?<span>Cheney<\/span><\/h1>/s);
     expect(html).toContain('"tz":"America/Chicago"');
     // 15 天预报：城市当地日期从 10 月 21 日开始（UTC 03:00 时美国中部还是 21 日）
     expect(html).toContain('data-date="2026-10-21"');
@@ -173,7 +175,7 @@ describe('city page', () => {
     const names = { lookup: async (ids: string[]) => new Map(ids.filter((i) => i === '102643743').map((i) => [i, { labels: { ja: 'ロンドン' }, iso: 'GB' }])) };
     const features = new MemoryFeatureStore();
     const a = createApp({
-      weather: () => new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, names),
+      weather: () => new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, names, new MockHistory()),
       features: () => features,
     });
     const html = await (await a.request(req('/wmi/ja/w/102643743'))).text();
@@ -326,24 +328,31 @@ describe('step 3 pages', () => {
     expect(html).toContain('href="/wmi/en/ranking"');
   });
 
-  it('says so when a city has no long-term averages', async () => {
-    const noClimate: WeatherProvider = new Proxy(new MockProvider(() => NOW), {
-      get(target, prop, receiver) {
-        const v = Reflect.get(target, prop, receiver);
-        if (prop === 'climateDay' || prop === 'climateMonthly') return () => Promise.reject(new ProviderError('plan', 403));
-        return typeof v === 'function' ? v.bind(target) : v;
-      },
-    });
-    const a = app(noClimate);
+  it('says so when there is no data for the same day last year', async () => {
+    // 没有配置 OpenWeather（没有密钥）：长期没有，不算"缺数据"，页面照常缓存 5 分钟
+    const a = app(new MockProvider(() => NOW), null);
     const homeRes = await a.request(req('/wmi/en/w/102643743'));
-    // 套餐不包含 / 城市没有往年数据是长期的，不算"缺数据"，页面照常缓存 5 分钟
     expect(homeRes.headers.get('X-Page-TTL')).toBe('300');
     const home = await homeRes.text();
     // 标签位置保留，显示"--"，不让首屏高度变化
     expect(home).toContain('style="--lv:var(--faint)"');
+    expect(home).not.toContain('data-guess-tag="');
     const res = await a.request(req('/wmi/en/w/102643743/climate'));
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("We don&#39;t have long-term averages");
+    expect(await res.text()).toContain('class="lead"');
+  });
+
+  it('does not give the answer away on the home page before the visitor guesses', async () => {
+    const home = await (await app().request(req('/wmi/en/w/102643743'))).text();
+    const at = home.indexOf('data-guess-tag="');
+    expect(at).toBeGreaterThan(0);
+    const tag = home.slice(at, home.indexOf('</a>', at));
+    // 结果只在 <template> 里，看得见的文字是"猜一猜"
+    const visible = tag.replace(/<template>[\s\S]*?<\/template>/, '');
+    // 看得见的部分没有温差数字，也没有结果文案
+    expect(visible).not.toContain('data-dca');
+    expect(visible).toContain('Warmer or colder than last year? Guess');
+    expect(tag).toContain('<template>');
   });
 
   it('caches a page for only a minute when data was missing for a temporary reason', async () => {
@@ -384,7 +393,8 @@ describe('step 3 pages', () => {
 
     const climate = await (await a.request(req('/wmi/en/w/102643743/climate'))).text();
     expect(climate).toContain('Please try again in a few minutes');
-    expect(climate).toContain('class="ph-chart"');
+    // 过去 7 天只用历史数据，今年的预报缺了也照常显示
+    expect(climate).toContain('class="series"');
     expect(climate).toContain('data-slot="climate_1"');
 
     const life = await (await a.request(req('/wmi/en/w/102643743/life/running'))).text();
@@ -466,7 +476,7 @@ describe('page cache', () => {
     const pending: Promise<unknown>[] = [];
     try {
       let renders = 0;
-      const service = new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined);
+      const service = new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, undefined, undefined, undefined, new MockHistory());
       const original = service.cityBundle.bind(service);
       service.cityBundle = (id: string) => (renders++, original(id));
       const a = createApp({ weather: () => service, features: () => new MemoryFeatureStore() });
@@ -517,3 +527,135 @@ describe('page cache', () => {
   });
 });
 
+
+describe('settings and chosen language', () => {
+  it('renders the settings page with every language and the unit switches', async () => {
+    const res = await app().request(req('/wmi/zh/settings'));
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html.match(/data-lang-choice="/g)?.length).toBe(28);
+    expect(html).toMatch(/data-lang-choice="zh"[^>]*aria-current="true"/);
+    expect(html).toContain('data-units-group="temp"');
+    expect(html).toContain('data-units-group="wind"');
+    expect((await app().request(req('/foo/zh/settings'))).status).toBe(404);
+  });
+
+  it('uses the chosen language when coming from outside, over the lock-screen locale', async () => {
+    const a = app();
+    const home = await a.request(req('/wmi/?locale=en-US', { headers: { Cookie: 'wlang=de' }, cf: { latitude: '51.5', longitude: '-0.12' } }));
+    expect(home.headers.get('Location')).toMatch(/^\/wmi\/de\/w\//);
+    const direct = await a.request(req('/wmi/en/w/102643743?session=s', { headers: { Cookie: 'x=1; wlang=de' } }));
+    expect(direct.status).toBe(302);
+    expect(direct.headers.get('Location')).toBe('/wmi/de/w/102643743?session=s');
+    // 站内点进来（同站 Referer）不换语言；设置页不换
+    const inside = await a.request(req('/wmi/en/w/102643743', { headers: { Cookie: 'wlang=de', Referer: 'https://weather.itsfunmag.com/wmi/de/w/1' } }));
+    expect(inside.status).toBe(200);
+    expect((await a.request(req('/wmi/en/settings', { headers: { Cookie: 'wlang=de' } }))).status).toBe(200);
+    // 没选过语言：照旧
+    expect((await a.request(req('/wmi/en/w/102643743'))).status).toBe(200);
+  });
+});
+
+describe('remembered city and current location (Darren 2026-10-29)', () => {
+  const istanbul = { latitude: '41.01', longitude: '28.95' };
+
+  it('opens the city the visitor looked at last', async () => {
+    const res = await app().request(req('/wmi/?session=s1', { headers: { Cookie: 'wlang=zh; wcity=101796236' }, cf: istanbul }));
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe('/wmi/zh/w/101796236?session=s1');
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('coordinates in the link still win (lock screen)', async () => {
+    const res = await app().request(req('/?lat=51.5&lon=-0.12', { headers: { Cookie: 'wcity=101796236' }, cf: istanbul }));
+    expect(res.headers.get('Location')).toBe('/wmi/en/w/102643743');
+  });
+
+  it('"Current Location" ignores the remembered city', async () => {
+    const res = await app().request(req('/wmi/?lang=en&here=1', { headers: { Cookie: 'wcity=101796236' }, cf: istanbul }));
+    expect(res.headers.get('Location')).toBe('/wmi/en/w/100745044');
+  });
+
+  it('falls back to location when the remembered city is unknown or malformed', async () => {
+    for (const cookie of ['wcity=999999999', 'wcity=../x']) {
+      const res = await app().request(req('/wmi/', { headers: { Cookie: cookie }, cf: istanbul }));
+      expect(res.headers.get('Location')).toBe('/wmi/en/w/100745044');
+    }
+  });
+
+  it('My Cities has a Current Location row and a back link the browser points at the previous city', async () => {
+    const html = await (await app().request(req('/wmi/zh/cities'))).text();
+    expect(html).toContain('href="/wmi/?lang=zh&amp;here=1"');
+    expect(html).toContain('data-cities-back');
+  });
+});
+
+describe('last year being prepared', () => {
+  it('shows a "being prepared" note, no question, and only caches briefly', async () => {
+    const slow: PastWeatherSource = { name: 'owm', slow: true, days: () => Promise.reject(new Error('pages must not call this')) };
+    const queue = new MemoryHistoryQueue();
+    const a = createApp({
+      weather: () => new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, undefined, slow, undefined, queue),
+      features: () => new MemoryFeatureStore(),
+    });
+    const res = await a.request(req('/wmi/zh/w/102643743/climate'));
+    const html = await res.text();
+    expect(html).toContain('正在准备这座城市去年的天气数据');
+    expect(html).toContain('data-no-question');
+    // 过去 7 天的图也说明在准备，不只是 "--"
+    expect(html).toContain('class="ph-note"');
+    expect(html).not.toContain('data-guess=');
+    expect(res.headers.get('X-Page-TTL')).not.toBe(null);
+    expect(Number(res.headers.get('X-Page-TTL'))).toBeLessThanOrEqual(60);
+    expect(queue.jobs.size).toBeGreaterThanOrEqual(2);
+    const home = await (await a.request(req('/wmi/zh/w/102643743'))).text();
+    expect(home).toContain('data-no-question');
+  });
+});
+
+describe('no spoilers for today or later questions (Darren 2026-10-29)', () => {
+  it('the climate page compares the past 7 days only and shows them before guessing', async () => {
+    const html = await (await app().request(req('/wmi/en/w/102643743/climate'))).text();
+    expect(html).toContain('Past 7 days vs. last year');
+    expect(html).not.toContain('data-spoil');
+    expect(html).not.toContain('spoiler-pending');
+    // 图上的日期都在今天（10-22）之前，最后一天是昨天
+    const labels = [...html.matchAll(/fill="rgba\(255,255,255,.65\)">([^<]+)</g)].map((m) => m[1]);
+    expect(labels).toHaveLength(7);
+    expect(labels.at(-1)).toBe('10/21');
+    expect(html).toContain('data-streak-pre');
+  });
+
+  it('tomorrow and the day after no longer show last year’s temperature', async () => {
+    for (const sub of ['tomorrow', 'day-after']) {
+      const html = await (await app().request(req(`/wmi/en/w/102643743/${sub}`))).text();
+      expect(html).not.toContain('Same day last year');
+      expect(html).toContain('/wmi/en/w/102643743/climate');
+    }
+  });
+
+  it('the ranking is about yesterday', async () => {
+    const html = await (await app().request(req('/wmi/en/ranking'))).text();
+    expect(html).toContain('Yesterday');
+  });
+});
+
+describe('ranking records only the real yesterday', () => {
+  it('skips a series that had to move back a day', async () => {
+    const { anomalyRecord } = await import('../src/features');
+    const loc = { id: '1', name: 'X', adminArea: null, country: 'GB', timezone: 'Europe/London', lat: 0, lon: 0 };
+    const bundle = { location: loc, today: '2026-10-22' } as unknown as Parameters<typeof anomalyRecord>[0];
+    const point = (date: string) => ({ date, maxTemp: 12, lastMaxTemp: 9, delta: 3, level: 'warmer' as const });
+    expect(anomalyRecord(bundle, [point('2026-10-21')], NOW)?.date).toBe('2026-10-21');
+    expect(anomalyRecord(bundle, [point('2026-10-20')], NOW)).toBeNull();
+  });
+});
+
+describe('home tag without a question yet', () => {
+  it('invites people to remember last year, and can scroll inside the pill', async () => {
+    const html = await (await app(new MockProvider(() => NOW), null).request(req('/wmi/en/w/102643743'))).text();
+    expect(html).toContain('Remember the weather on this day last year?');
+    expect(html).toContain('data-marquee');
+    expect(html).not.toContain('Today vs. last year –');
+  });
+});
