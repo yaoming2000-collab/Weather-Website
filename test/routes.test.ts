@@ -351,7 +351,7 @@ describe('step 3 pages', () => {
     const visible = tag.replace(/<template>[\s\S]*?<\/template>/, '');
     // 看得见的部分没有温差数字，也没有结果文案
     expect(visible).not.toContain('data-dca');
-    expect(visible).toContain('Warmer or colder than last year? Guess');
+    expect(visible).toContain('Remember the weather on this day last year? Guess');
     expect(tag).toContain('<template>');
   });
 
@@ -654,7 +654,7 @@ describe('ranking records only the real yesterday', () => {
 describe('home tag without a question yet', () => {
   it('invites people to remember last year, and can scroll inside the pill', async () => {
     const html = await (await app(new MockProvider(() => NOW), null).request(req('/wmi/en/w/102643743'))).text();
-    expect(html).toContain('Remember the weather on this day last year?');
+    expect(html).toContain('Remember the weather on this day last year? Guess');
     expect(html).toContain('data-marquee');
     expect(html).not.toContain('Today vs. last year –');
   });

@@ -285,7 +285,7 @@ export function ClimateTag(props: { p: PageProps }) {
   const { p } = props;
   const label = p.features.label;
   const href = cityPath(p.channel, p.lang, p.bundle.location.id, 'climate');
-  // 还没有题（去年数据在准备，或这个城市一直没有）：显示"还记得去年今天的天气吗？"，点进去看原因
+  // 还没有题（去年数据在准备，或这个城市一直没有）：同样显示"还记得去年今天的天气吗？猜一猜"，点进去看原因
   if (!label) {
     // 一直没有去年数据（不是临时取不到）：今天没出题，连续猜对天数不算断（client/main.ts markSkippedDay）
     const transient = p.bundle.missing.some((m) => m === 'lastYear' || m === 'daily');
@@ -295,7 +295,7 @@ export function ClimateTag(props: { p: PageProps }) {
       <a class="vs" data-nav href={href} style="--lv:var(--faint)" {...skip}>
         <i />
         <span class="mq" data-marquee>
-          <span class="mq-in">{t(p.lang, 'ClimateRemember')}</span>
+          <span class="mq-in">{t(p.lang, 'ClimateTeaser')}</span>
         </span>
         {G.chevron('flip')}
       </a>
@@ -313,7 +313,12 @@ export function ClimateTag(props: { p: PageProps }) {
         data-result-color={CLIMATE_LEVEL_COLORS[c.level]}
       >
         <i />
-        <span data-tag-text>{t(p.lang, 'ClimateTeaser')}</span>
+        {/* 和"还没有题"时同一句文案（Darren 2026-10-29）；放不下时滚动，猜过后换成结果 */}
+        <span class="mq" data-marquee>
+          <span class="mq-in" data-tag-text>
+            {t(p.lang, 'ClimateTeaser')}
+          </span>
+        </span>
         <template>{rich(p.lang, `ClimateLabel_${c.wording}`, { delta: <Delta c={c.deltaMax} /> })}</template>
         {G.chevron('flip')}
       </a>
