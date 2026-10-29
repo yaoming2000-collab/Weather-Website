@@ -5,6 +5,15 @@
 去年同一天的天气来自 OpenWeather（密钥用 `npx wrangler secret put OWM_KEY --env preview` 设置；不设置时"和去年比"显示 "--"）。
 （2026-10-28 起这两项已写进仓库的 `wrangler.toml`，不需要再在本地修改。）
 
+**2026-10-29 起测试环境需要一个 KV**（去年数据由每 10 分钟的定时任务取回、存进 KV，页面才看得到）。只需做一次：
+
+```bash
+npx wrangler kv namespace create WEATHER_KV --env preview
+```
+
+把输出里的 `id` 填到 `wrangler.toml` 里 `[[env.preview.kv_namespaces]]` 下面（替换 `REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID`），再部署。
+这个 id 不是密钥，可以提交到仓库。
+
 预计用时：首次 15 分钟左右；之后每次更新 1 分钟。
 
 ---
@@ -126,6 +135,7 @@ git stash pop
 | --- | --- |
 | `wrangler login` 后浏览器没有反应 | 换一个浏览器，或把命令行里显示的链接手动复制到浏览器打开 |
 | 部署时报错提到 `KV namespace` 或 `REPLACE_WITH_KV_NAMESPACE_ID` | 忘了加 `--env preview`，加上后重新执行 |
+| 部署时报错提到 `REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID` | 还没创建测试环境的 KV，见页首 |
 | 部署时报错提到 `node` 版本 | 升级到 Node.js 22 |
 | 打开网址显示 "Weather unavailable" | 把截图和网址发给 Claude 排查 |
 
