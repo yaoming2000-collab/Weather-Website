@@ -273,6 +273,7 @@
   "WeekColdest": "最も寒い",
   "DayByDay": "日ごとの予報",
   "ClimateUnavailable": "この都市の去年の同じ日の天気データはまだありません。",
+  "ClimatePreparing": "この都市の昨年の天気データを準備しています。10分ほどしてからもう一度ご覧ください。",
   "GuessTitle": "予想してみよう",
   "ClimateForecastHigh": "予想最高気温",
   "ClimateNormalBand": "去年とほぼ同じ（±2°）",

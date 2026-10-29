@@ -327,13 +327,43 @@ async function message(c: C, status: 404 | 500 | 503, titleKey: string, textKey:
   });
 }
 
-/** 首页和旧网址：决定城市坐标后跳转到新的城市网址 */
+/**
+ * 首页和旧网址：决定去哪个城市后跳转到新的城市网址（Darren 2026-10-29）。
+ * 1. 链接里带了坐标（锁屏、旧链接）：用坐标，那是设备的真实位置
+ * 2. 用户上次看的城市（Cookie wcity，浏览器在城市页写入，见 client/main.ts rememberCity）
+ *    —— 收藏页的"Current Location"（?here=1）跳过这一步，按 IP 定位
+ * 3. 按 IP 定位
+ */
 async function legacyHome(c: C, channel: Channel) {
   const q = query(c);
-  // 旧链接直接指定了城市坐标
-  const coords =
-    parseCoords(q.get('lat'), q.get('lon')) ?? visitorCoords(c.req.raw) ?? fallbackCoords(c.req.raw, c.req.header('Accept-Language'));
-  return redirectToNearest(c, channel, langOf(c), coords);
+  const lang = langOf(c);
+  const given = parseCoords(q.get('lat'), q.get('lon'));
+  if (!given && q.get(HERE_PARAM) !== '1') {
+    const id = lastCity(c);
+    if (id) {
+      try {
+        // 确认城市还在（地点信息缓存 30 天，几乎不请求 Foreca）；不在了就按 IP 定位
+        await c.var.weather.location(id);
+        c.header('Cache-Control', 'no-store');
+        return c.redirect(withNavParams(cityPath(channel, lang, id), q), 302);
+      } catch (err) {
+        if (!isNotFound(err)) console.warn('[home] remembered city unavailable', err);
+      }
+    }
+  }
+  const coords = given ?? visitorCoords(c.req.raw) ?? fallbackCoords(c.req.raw, c.req.header('Accept-Language'));
+  return redirectToNearest(c, channel, lang, coords);
+}
+
+/** 用户上次看的城市（浏览器在城市页写入，一年） */
+export const LAST_CITY_COOKIE = 'wcity';
+/** 收藏页"Current Location"：按定位，不用上次看的城市 */
+export const HERE_PARAM = 'here';
+
+function lastCity(c: C): string | null {
+  const m = (c.req.header('Cookie') ?? '').match(new RegExp(`(?:^|;\\s*)${LAST_CITY_COOKIE}=([^;]+)`));
+  const id = m ? m[1]!.trim() : '';
+  return LOCATION_ID.test(id) ? id : null;
 }
 
 async function redirectToNearest(c: C, channel: Channel, lang: Lang, coords: Coords) {

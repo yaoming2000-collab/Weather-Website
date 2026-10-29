@@ -7,6 +7,7 @@ import type { WeatherProvider } from './provider';
 import { WeatherService } from './service';
 import { WikidataAreaSearch, WikidataNames } from './wikidata';
 import { MockHistory, OpenWeatherHistory, type PastWeatherSource } from './history';
+import { KvHistoryQueue } from './historyQueue';
 
 /** 同一个 Worker 实例内复用的内存缓存（没有 KV 和 Cache API 时使用，例如测试） */
 const memory = new MemoryStore();
@@ -33,8 +34,20 @@ export function createHistory(env: Env): PastWeatherSource | undefined {
   return env.OWM_KEY ? new OpenWeatherHistory(env.OWM_KEY) : undefined;
 }
 
-export function createWeatherService(env: Env): WeatherService {
+export function createWeatherService(env: Env, usage: D1Usage | undefined = env.DB ? new D1Usage(env.DB) : undefined): WeatherService {
   // 调用统计写在 D1（线上）；没有数据库的测试环境不统计
-  const usage = env.DB ? new D1Usage(env.DB) : undefined;
-  return new WeatherService(createProvider(env), createStore(env), undefined, undefined, undefined, usage, new WikidataNames(), createHistory(env), new WikidataAreaSearch());
+  // 去年数据的待取队列放在 KV：没有 KV 时（本地开发）页面直接请求，像以前一样
+  const queue = env.WEATHER_KV ? new KvHistoryQueue(env.WEATHER_KV) : undefined;
+  return new WeatherService(
+    createProvider(env),
+    createStore(env),
+    undefined,
+    undefined,
+    undefined,
+    usage,
+    new WikidataNames(),
+    createHistory(env),
+    new WikidataAreaSearch(),
+    queue,
+  );
 }

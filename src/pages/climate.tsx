@@ -163,6 +163,8 @@ export function ClimatePage(p: PageProps) {
   const verdictTpl = cmp ? t(lang, `ClimateVerdict_${cmp.wording}`) : '';
   // 去年数据或今年预报这次没取到（临时失败）→ 提示稍后再试；一直没有去年数据 → 说明
   const transient = bundle.missing.some((m) => m === 'lastYear' || m === 'daily');
+  // 新城市的去年数据正在排队等定时任务取（10 分钟左右）：今天先不出题，连续猜对不算断
+  const preparing = !transient && bundle.missing.includes('lastYearPending');
 
   return (
     <Layout lang={lang} title={`${title} · ${loc.name}`} sky={pageSky(p)} devNote={devNote(p.providerName)} pageData={{ ...cityPageData(p), page: 'climate' }}>
@@ -171,7 +173,7 @@ export function ClimatePage(p: PageProps) {
       {!cmp ? (
         // 今天没出题（一直没有去年数据）：连续猜对天数不算断（client/main.ts markSkippedDay）；临时取不到时不算，等会儿还会出题
         <section class="card" {...(transient ? {} : { 'data-no-question': '', 'data-city': loc.id, 'data-date': bundle.today })}>
-          <p class="lead">{t(lang, transient ? 'TryLater' : 'ClimateUnavailable')}</p>
+          <p class="lead">{t(lang, transient ? 'TryLater' : preparing ? 'ClimatePreparing' : 'ClimateUnavailable')}</p>
         </section>
       ) : (
         <>

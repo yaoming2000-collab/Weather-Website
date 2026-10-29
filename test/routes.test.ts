@@ -7,6 +7,7 @@ import { MockProvider } from '../src/weather/mock';
 import { ProviderError, type WeatherProvider } from '../src/weather/provider';
 import { WeatherService } from '../src/weather/service';
 import { MockHistory, type PastWeatherSource } from '../src/weather/history';
+import { HISTORY_MAX_ATTEMPTS, MemoryHistoryQueue } from '../src/weather/historyQueue';
 
 const NOW = Date.UTC(2026, 9, 22, 3, 0);
 
@@ -551,5 +552,60 @@ describe('settings and chosen language', () => {
     expect((await a.request(req('/wmi/en/settings', { headers: { Cookie: 'wlang=de' } }))).status).toBe(200);
     // 没选过语言：照旧
     expect((await a.request(req('/wmi/en/w/102643743'))).status).toBe(200);
+  });
+});
+
+describe('remembered city and current location (Darren 2026-10-29)', () => {
+  const istanbul = { latitude: '41.01', longitude: '28.95' };
+
+  it('opens the city the visitor looked at last', async () => {
+    const res = await app().request(req('/wmi/?session=s1', { headers: { Cookie: 'wlang=zh; wcity=101796236' }, cf: istanbul }));
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe('/wmi/zh/w/101796236?session=s1');
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('coordinates in the link still win (lock screen)', async () => {
+    const res = await app().request(req('/?lat=51.5&lon=-0.12', { headers: { Cookie: 'wcity=101796236' }, cf: istanbul }));
+    expect(res.headers.get('Location')).toBe('/wmi/en/w/102643743');
+  });
+
+  it('"Current Location" ignores the remembered city', async () => {
+    const res = await app().request(req('/wmi/?lang=en&here=1', { headers: { Cookie: 'wcity=101796236' }, cf: istanbul }));
+    expect(res.headers.get('Location')).toBe('/wmi/en/w/100745044');
+  });
+
+  it('falls back to location when the remembered city is unknown or malformed', async () => {
+    for (const cookie of ['wcity=999999999', 'wcity=../x']) {
+      const res = await app().request(req('/wmi/', { headers: { Cookie: cookie }, cf: istanbul }));
+      expect(res.headers.get('Location')).toBe('/wmi/en/w/100745044');
+    }
+  });
+
+  it('My Cities has a Current Location row and a back link the browser points at the previous city', async () => {
+    const html = await (await app().request(req('/wmi/zh/cities'))).text();
+    expect(html).toContain('href="/wmi/?lang=zh&amp;here=1"');
+    expect(html).toContain('data-cities-back');
+  });
+});
+
+describe('last year being prepared', () => {
+  it('shows a "being prepared" note, no question, and only caches briefly', async () => {
+    const slow: PastWeatherSource = { name: 'owm', slow: true, days: () => Promise.reject(new Error('pages must not call this')) };
+    const queue = new MemoryHistoryQueue();
+    const a = createApp({
+      weather: () => new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, undefined, slow, undefined, queue),
+      features: () => new MemoryFeatureStore(),
+    });
+    const res = await a.request(req('/wmi/zh/w/102643743/climate'));
+    const html = await res.text();
+    expect(html).toContain('正在准备这座城市去年的天气数据');
+    expect(html).toContain('data-no-question');
+    expect(html).not.toContain('data-guess=');
+    expect(res.headers.get('X-Page-TTL')).not.toBe(null);
+    expect(Number(res.headers.get('X-Page-TTL'))).toBeLessThanOrEqual(60);
+    expect(queue.jobs.size).toBeGreaterThanOrEqual(2);
+    const home = await (await a.request(req('/wmi/zh/w/102643743'))).text();
+    expect(home).toContain('data-no-question');
   });
 });

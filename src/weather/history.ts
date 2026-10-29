@@ -22,6 +22,8 @@ export interface PastDay {
 
 export interface PastWeatherSource {
   readonly name: string;
+  /** 请求很慢（页面等不起）：有待取队列时页面只读缓存，缺的交给定时任务 */
+  readonly slow?: boolean;
   /** 从 startDate（YYYY-MM-DD）开始的若干天（OpenWeather 一次 10 天） */
   days(lat: number, lon: number, startDate: string): Promise<PastDay[]>;
 }
@@ -37,11 +39,17 @@ interface RawDay {
   weather?: Array<{ id?: number }>;
 }
 
+/** OpenWeather 4.0 很慢（2026-10-28 实测一次 46–49 秒），只在定时任务里请求，给足时间 */
+export const OWM_TIMEOUT_MS = 90_000;
+
 export class OpenWeatherHistory implements PastWeatherSource {
   readonly name = 'owm';
+  /** 太慢，页面不等它：缺的数据放进待取队列，由定时任务取（见 WeatherService.lastYear、drainHistoryQueue） */
+  readonly slow = true;
   constructor(
     private readonly key: string,
     private readonly fetcher: typeof fetch = (...a) => fetch(...a),
+    private readonly timeoutMs: number = OWM_TIMEOUT_MS,
   ) {}
 
   async days(lat: number, lon: number, startDate: string): Promise<PastDay[]> {
@@ -50,7 +58,7 @@ export class OpenWeatherHistory implements PastWeatherSource {
     const url = `${API}?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&units=metric&start=${start}&appid=${encodeURIComponent(this.key)}`;
     let res: Response;
     try {
-      res = await this.fetcher(url, { headers: { Accept: 'application/json' } });
+      res = await this.fetcher(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(this.timeoutMs) });
     } catch (err) {
       throw new ProviderError(`OpenWeather request failed (${(err as Error).message})`);
     }

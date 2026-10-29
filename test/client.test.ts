@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addCity, MAX_CITIES, mergeCities, parseLegacy, parseSaved, readCookie, removeCity } from '../client/lib/saved';
 import { cityToday, minutesAgo, pastHourCount } from '../client/lib/time';
+import { citiesBackPath, lastCityCookie, parseLastCity } from '../client/lib/lastCity';
 import { defaultUnits, formatDistance, formatPrecip, formatSpeed, formatTemp, formatTempDelta, fromLegacy, parseUnits } from '../client/lib/units';
 
 describe('units', () => {
@@ -145,5 +146,32 @@ describe('guess streak edge cases', () => {
     const { recordResult } = await import('../client/lib/streak');
     const s = recordResult(recordResult(undefined, '2026-10-21', true), '2026-10-22', true);
     expect(recordResult(s, '2026-10-21', false)).toBe(s);
+  });
+});
+
+describe('last city (My Cities back link)', () => {
+  const last = { id: '101796236', name: '上海', path: '/wmi/zh/w/101796236' };
+  const host = 'weather.itsfunmag.com';
+
+  it('reads only well-formed entries', () => {
+    expect(parseLastCity(JSON.stringify(last))).toEqual(last);
+    expect(parseLastCity(JSON.stringify({ ...last, path: 'https://evil.example/' }))).toBeNull();
+    expect(parseLastCity('{bad')).toBeNull();
+    expect(parseLastCity(null)).toBeNull();
+  });
+
+  it('goes back to the city page the visitor came from, in the current language', () => {
+    expect(citiesBackPath(`https://${host}/wmi/en/w/102643743/climate?session=1`, host, last, 'zh')).toBe('/wmi/zh/w/102643743/climate');
+  });
+
+  it('otherwise goes to the last city; nothing known keeps the server link', () => {
+    expect(citiesBackPath(`https://${host}/wmi/zh/settings`, host, last, 'en')).toBe('/wmi/en/w/101796236');
+    expect(citiesBackPath('https://other.example/wmi/en/w/1', host, null, 'en')).toBeNull();
+    expect(citiesBackPath('', host, null, 'en')).toBeNull();
+  });
+
+  it('cookie lasts a year and is Secure on https', () => {
+    expect(lastCityCookie('101796236', true)).toBe('wcity=101796236; Path=/; Max-Age=31536000; SameSite=Lax; Secure');
+    expect(lastCityCookie('101796236', false)).not.toContain('Secure');
   });
 });

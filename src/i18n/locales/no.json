@@ -273,6 +273,7 @@
   "WeekColdest": "Kaldest",
   "DayByDay": "Dag for dag",
   "ClimateUnavailable": "Vi har ennå ikke været for denne dagen i fjor for denne byen.",
+  "ClimatePreparing": "Vi henter fjorårets vær for denne byen. Sjekk igjen om omtrent 10 minutter.",
   "GuessTitle": "Gjett",
   "ClimateForecastHigh": "Varslet maks",
   "ClimateNormalBand": "Omtrent som i fjor (±2°)",

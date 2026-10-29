@@ -273,6 +273,7 @@
   "WeekColdest": "Giorno più freddo",
   "DayByDay": "Giorno per giorno",
   "ClimateUnavailable": "Non abbiamo ancora il meteo di questo giorno dell'anno scorso per questa città.",
+  "ClimatePreparing": "Stiamo preparando il meteo dell'anno scorso per questa città. Torna tra circa 10 minuti.",
   "GuessTitle": "Indovina",
   "ClimateForecastHigh": "Massima prevista",
   "ClimateNormalBand": "Come l'anno scorso (±2°)",

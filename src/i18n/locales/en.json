@@ -273,6 +273,7 @@
   "WeekColdest": "Coldest",
   "DayByDay": "Day by day",
   "ClimateUnavailable": "We don't have the weather for this day last year for this city.",
+  "ClimatePreparing": "We're getting last year's weather for this city. Check back in about 10 minutes.",
   "GuessTitle": "Take a guess",
   "ClimateForecastHigh": "Forecast high",
   "ClimateNormalBand": "About the same as last year (±2°)",

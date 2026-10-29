@@ -273,6 +273,7 @@
   "WeekColdest": "सबसे ठंडा दिन",
   "DayByDay": "दिन-ब-दिन",
   "ClimateUnavailable": "इस शहर के लिए पिछले साल इसी दिन का मौसम अभी उपलब्ध नहीं है।",
+  "ClimatePreparing": "हम इस शहर का पिछले साल का मौसम तैयार कर रहे हैं। लगभग 10 मिनट बाद फिर देखें।",
   "GuessTitle": "अंदाजा लगाइए",
   "ClimateForecastHigh": "अनुमानित अधिकतम",
   "ClimateNormalBand": "पिछले साल जैसा (±2°)",

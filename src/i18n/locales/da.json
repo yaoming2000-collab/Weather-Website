@@ -273,6 +273,7 @@
   "WeekColdest": "Koldest",
   "DayByDay": "Dag for dag",
   "ClimateUnavailable": "Vi har endnu ikke vejret for denne dag sidste år for denne by.",
+  "ClimatePreparing": "Vi henter sidste års vejr for denne by. Kig forbi igen om cirka 10 minutter.",
   "GuessTitle": "Gæt med",
   "ClimateForecastHigh": "Forventet højeste",
   "ClimateNormalBand": "Omtrent som sidste år (±2°)",

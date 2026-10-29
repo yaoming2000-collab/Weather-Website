@@ -186,9 +186,10 @@ export function CitiesPage(props: { channel: Channel; lang: Lang; providerName: 
     <Layout lang={lang} title={t(lang, 'MyCitiesTitle')} devNote={devNote(props.providerName)} pageData={{ channel, page: 'cities' }}>
       <header class="top">
         <div class="place">
-          <a class="back" data-nav href={`/${channel}/?lang=${lang}`}>
+          {/* 返回进来之前的城市：首页会跳到上次看的城市；浏览器脚本再换成来源页和城市名（client/main.ts setupCitiesBack） */}
+          <a class="back" data-nav data-cities-back href={`/${channel}/?lang=${lang}`}>
             {G.back()}
-            <span>{t(lang, 'CurrentLocation')}</span>
+            <span>{t(lang, 'Back')}</span>
           </a>
           <h1>
             <span>{t(lang, 'MyCitiesTitle')}</span>
@@ -200,6 +201,18 @@ export function CitiesPage(props: { channel: Channel; lang: Lang; providerName: 
         <input type="search" name="q" autocomplete="off" placeholder={t(lang, 'SearchCityWorldwidePlaceholder')} aria-label={t(lang, 'SearchCityWorldwidePlaceholder')} />
       </form>
       <section class="card" data-search-results hidden></section>
+      {/* 当前位置：按定位（IP）去，不用上次看的城市（Darren 2026-10-29） */}
+      <section class="card here-card">
+        <div class="city here">
+          <a data-nav href={`/${channel}/?lang=${lang}&here=1`}>
+            <span class="here-ico">{G.pin()}</span>
+            <div class="n">
+              <div>{t(lang, 'CurrentLocation')}</div>
+            </div>
+            {G.chevron()}
+          </a>
+        </div>
+      </section>
       <section class="card" data-saved-list>
         <div class="empty">{t(lang, 'LoadingSavedCities')}</div>
       </section>

@@ -273,6 +273,7 @@
   "WeekColdest": "Najzimniejszy",
   "DayByDay": "Dzień po dniu",
   "ClimateUnavailable": "Nie mamy jeszcze pogody z tego dnia rok temu dla tego miasta.",
+  "ClimatePreparing": "Przygotowujemy pogodę z zeszłego roku dla tego miasta. Zajrzyj ponownie za około 10 minut.",
   "GuessTitle": "Zgadnij",
   "ClimateForecastHigh": "Prognozowane maksimum",
   "ClimateNormalBand": "Jak rok temu (±2°)",

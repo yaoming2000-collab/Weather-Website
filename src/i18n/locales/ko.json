@@ -273,6 +273,7 @@
   "WeekColdest": "가장 추움",
   "DayByDay": "일별 예보",
   "ClimateUnavailable": "이 도시의 작년 같은 날 날씨 데이터가 아직 없어요.",
+  "ClimatePreparing": "이 도시의 작년 날씨 데이터를 준비하고 있어요. 10분쯤 후에 다시 확인해 주세요.",
   "GuessTitle": "맞혀 보세요",
   "ClimateForecastHigh": "예상 최고기온",
   "ClimateNormalBand": "작년과 비슷(±2°)",

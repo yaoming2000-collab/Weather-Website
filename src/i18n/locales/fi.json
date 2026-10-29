@@ -273,6 +273,7 @@
   "WeekColdest": "Kylmin",
   "DayByDay": "Päivä päivältä",
   "ClimateUnavailable": "Tälle kaupungille ei vielä ole tämän päivän säätä viime vuodelta.",
+  "ClimatePreparing": "Haemme tämän kaupungin viime vuoden säätä. Katso uudelleen noin 10 minuutin kuluttua.",
   "GuessTitle": "Arvaa",
   "ClimateForecastHigh": "Ennustettu ylin",
   "ClimateNormalBand": "Kuin viime vuonna (±2°)",

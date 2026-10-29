@@ -273,6 +273,7 @@
   "WeekColdest": "Am kältesten",
   "DayByDay": "Tag für Tag",
   "ClimateUnavailable": "Für diese Stadt haben wir noch kein Wetter vom selben Tag des Vorjahres.",
+  "ClimatePreparing": "Wir holen gerade das Wetter vom letzten Jahr für diese Stadt. Schau in etwa 10 Minuten wieder vorbei.",
   "GuessTitle": "Rate mal",
   "ClimateForecastHigh": "Vorhergesagter Höchstwert",
   "ClimateNormalBand": "Etwa wie im Vorjahr (±2°)",

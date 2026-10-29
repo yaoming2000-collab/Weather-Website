@@ -195,7 +195,8 @@ body{--cl:255,255,255}
 .btn svg{width:20px;height:20px}
 .btn[aria-pressed="true"] svg{fill:#ffd36b;stroke:#ffd36b}
 .back{display:inline-flex;align-items:center;gap:4px;font-size:14px;color:var(--mut);padding:12px 0;margin:-12px 0}
-.back svg{width:16px;height:16px}
+.back svg{width:16px;height:16px;flex:none}
+.back span{max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 [dir=rtl] .flip{transform:scaleX(-1)}
 
 /* 明天、后天、一周 */
@@ -468,6 +469,11 @@ details.dd .more b{color:var(--fg);font-weight:600}
 .city img{width:40px;height:40px}
 .city .n{flex:1;min-width:0}.city .sub{font-size:12px;color:var(--mut)}.city .n div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .city .v{font-size:24px;font-weight:400}
+.here-card{padding-top:4px;padding-bottom:4px}
+.city.here .here-ico{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:var(--chip)}
+.city.here .here-ico svg{width:22px;height:22px}
+.city.here>a>svg{width:16px;height:16px;opacity:.7;flex:none}
+.city.here .n div{font-weight:600}
 .city button{padding:4px 8px;border:0;background:none;color:var(--mut);font-size:20px;cursor:pointer}
 .empty{padding:16px 0;text-align:center;color:var(--mut)}
 

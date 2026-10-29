@@ -273,6 +273,7 @@
   "WeekColdest": "Terdingin",
   "DayByDay": "Hari demi hari",
   "ClimateUnavailable": "Kami belum punya data cuaca hari yang sama tahun lalu untuk kota ini.",
+  "ClimatePreparing": "Kami sedang menyiapkan cuaca tahun lalu untuk kota ini. Periksa lagi sekitar 10 menit lagi.",
   "GuessTitle": "Coba tebak",
   "ClimateForecastHigh": "Prakiraan suhu tertinggi",
   "ClimateNormalBand": "Sama dengan tahun lalu (±2°)",

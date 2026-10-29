@@ -273,6 +273,7 @@
   "WeekColdest": "En soğuk gün",
   "DayByDay": "Gün gün",
   "ClimateUnavailable": "Bu şehir için geçen yılın aynı gününe ait hava verisi henüz yok.",
+  "ClimatePreparing": "Bu şehrin geçen yılki hava durumunu hazırlıyoruz. Yaklaşık 10 dakika sonra tekrar bakın.",
   "GuessTitle": "Tahmin et",
   "ClimateForecastHigh": "Tahmini en yüksek",
   "ClimateNormalBand": "Geçen yılla aynı (±2°)",

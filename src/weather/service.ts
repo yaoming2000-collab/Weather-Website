@@ -15,6 +15,7 @@ import { WIKIDATA_LANGS, type AreaSearchSource, type PlaceNamesSource, type Wiki
 import { isoOfCountry } from '../geo/countries';
 import { normalizeSearch, searchLongEnough } from './search';
 import { historyBlockStart, lastYearDate, type PastDay, type PastWeatherSource } from './history';
+import type { HistoryQueue } from './historyQueue';
 
 export { normalizeSearch, searchLongEnough };
 import { ProviderError, type WeatherProvider } from './provider';
@@ -61,7 +62,12 @@ export class WeatherService {
     private readonly history?: PastWeatherSource,
     /** Foreca 搜不到时按名字找县、区（Wikidata） */
     private readonly areaSearch?: AreaSearchSource,
+    /** 去年数据的待取队列（KV）。数据源很慢（OpenWeather）时页面不等，缺的交给定时任务（drainHistoryQueue） */
+    private readonly historyQueue?: HistoryQueue,
   ) {}
+
+  /** 本实例刚放进队列的块（键 → 时刻），短时间内不重复写 KV */
+  private readonly queuedAt = new Map<string, number>();
 
   /** Wikidata 出错后暂停查询到这个时刻（同一实例内），期间城市名用英文 */
   private namesPausedUntil = 0;
@@ -445,39 +451,110 @@ export class WeatherService {
   /**
    * 去年同一天的实际天气，按今年的日期返回（今年 2 月 29 日对去年 2 月 28 日）。
    * 按 10 天一块向 OpenWeather 取（一次请求 10 天），每块永久缓存：同一城市大约每 10 天才新请求一次。
+   * 数据源很慢（OpenWeather 40 多秒）且有待取队列时：只读缓存，缺的块放进队列，由定时任务去取，
+   * 这几天先算"正在准备"（pending）。
    * 某一块取不到时，那几天没有数据（页面显示 "--"），其余照常。
    */
-  async lastYear(location: WeatherLocation, dates: string[]): Promise<Fetched<Record<string, PastDay>> & { partial?: boolean }> {
+  async lastYear(
+    location: WeatherLocation,
+    dates: string[],
+  ): Promise<Fetched<Record<string, PastDay>> & { partial?: boolean; pending?: boolean }> {
     const source = this.history;
     if (!source || dates.length === 0) return { data: {}, fetchedAt: this.now() };
     const wanted = dates.map((d) => ({ date: d, past: lastYearDate(d) }));
     const blocks = [...new Set(wanted.map((w) => historyBlockStart(w.past)))];
+    const queue = source.slow ? this.historyQueue : undefined;
     const results = await Promise.allSettled(
-      blocks.map((start) =>
-        this.cached(['v1', source.name, 'ly', location.id, start].join(':'), DATA_TTL.lastYear, () =>
-          source.days(location.lat, location.lon, start),
-        ),
-      ),
+      blocks.map((start) => {
+        const key = historyKey(source.name, location.id, start);
+        return queue
+          ? this.cachedOrQueued<PastDay[]>(key, queue, { cityId: location.id, lat: location.lat, lon: location.lon, start })
+          : this.cached(key, DATA_TTL.lastYear, () => source.days(location.lat, location.lon, start));
+      }),
     );
     const byPast = new Map<string, PastDay>();
     let fetchedAt = this.now();
-    let failure: unknown = null;
+    const failures: unknown[] = [];
     results.forEach((r) => {
       if (r.status === 'fulfilled') {
         fetchedAt = Math.min(fetchedAt, r.value.fetchedAt);
         for (const d of r.value.data) byPast.set(d.date, d);
-      } else failure = r.reason;
+      } else failures.push(r.reason);
     });
-    // 全部失败时报错（页面记为"缺数据"，只缓存 1 分钟）；部分失败时用拿到的
-    if (byPast.size === 0 && failure) throw failure;
+    const pending = failures.some((e) => statusOf(e) === PENDING);
+    // 全部失败（而且不是在排队）时报错（页面记为"缺数据"，只缓存 1 分钟）；部分失败时用拿到的
+    if (byPast.size === 0 && failures.length && !pending) throw failures[0];
     const data: Record<string, PastDay> = {};
     for (const w of wanted) {
       const d = byPast.get(w.past);
       if (d) data[w.date] = d;
     }
-    // 有一块取不到（不是"没有这份数据"）：页面要知道，只短暂缓存
-    const partial = results.some((r) => r.status === 'rejected' && !isAbsent(statusOf(r.reason)));
-    return { data, fetchedAt, partial };
+    // 有一块取不到（不是"没有这份数据"、也不是在排队）：页面要知道，只短暂缓存
+    const partial = failures.some((e) => {
+      const st = statusOf(e);
+      return st !== PENDING && !isAbsent(st);
+    });
+    return { data, fetchedAt, partial, pending };
+  }
+
+  /**
+   * 只读缓存；没有时放进待取队列，报"正在准备"（PENDING）。
+   * 定时任务记下的"没有这份数据"（404，写在全球）照常报 404，页面显示 "--"、不出题。
+   */
+  private async cachedOrQueued<T>(key: string, queue: HistoryQueue, job: Parameters<HistoryQueue['add']>[0]): Promise<Fetched<T>> {
+    const hit = await this.store.get<T>(key);
+    if (hit) return { data: hit.value, fetchedAt: hit.fetchedAt };
+    const now = this.now();
+    const failed = await this.store.get<FailureMark>(`${key}:fail`);
+    if (failed && now < (failed.freshUntil ?? 0) && failed.value.status === 404) throw new ProviderError(`no data: ${key}`, 404);
+    const last = this.queuedAt.get(key);
+    if (last === undefined || now - last > REQUEUE_AFTER_MS) {
+      this.queuedAt.set(key, now);
+      await queue.add(job).catch((err) => {
+        this.queuedAt.delete(key);
+        this.log(`[weather] cannot queue ${key}: ${(err as Error).message}`);
+      });
+    }
+    throw new ProviderError(`queued: ${key}`, PENDING);
+  }
+
+  /**
+   * 定时任务：把队列里的去年数据取回来，存进缓存（KV，所有机房共用）。
+   * - 同时最多 concurrency 个请求（Workers 同时只能开 6 个连接）
+   * - 过了 stopAt 不再开始新的请求（避免和下一次定时任务重叠）
+   * - "没有这份数据"（404）、密钥问题（401/403）：从队列删掉；其他失败：下次再试，最多 HISTORY_MAX_ATTEMPTS 次
+   */
+  async drainHistoryQueue(options: { limit?: number; concurrency?: number; stopAt?: number } = {}): Promise<{ fetched: number; dropped: number; retried: number; left: number }> {
+    const queue = this.historyQueue;
+    const source = this.history;
+    const stats = { fetched: 0, dropped: 0, retried: 0, left: 0 };
+    if (!queue || !source) return stats;
+    const jobs = await queue.take(options.limit ?? HISTORY_DRAIN.limit);
+    const stopAt = options.stopAt ?? Infinity;
+    let next = 0;
+    const worker = async () => {
+      while (next < jobs.length && Date.now() < stopAt) {
+        const job = jobs[next++]!;
+        const key = historyKey(source.name, job.cityId, job.start);
+        try {
+          await this.cached(key, DATA_TTL.lastYear, () => source.days(job.lat, job.lon, job.start));
+          await queue.done(job);
+          stats.fetched++;
+        } catch (err) {
+          if (isAbsent(statusOf(err))) {
+            await queue.done(job).catch(() => undefined);
+            stats.dropped++;
+          } else {
+            this.log(`[weather] history ${key} failed (attempt ${job.attempts + 1}): ${(err as Error).message}`);
+            await queue.retry(job).catch(() => undefined);
+            stats.retried++;
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, options.concurrency ?? HISTORY_DRAIN.concurrency) }, worker));
+    stats.left = jobs.length - next;
+    return stats;
   }
 
   nowcast(id: string, radar: boolean): Promise<Fetched<NowcastPoint[]>> {
@@ -518,7 +595,10 @@ export class WeatherService {
     ]);
 
     const hours = hourly ? { ...hourly, data: fromCurrentHour(hourly.data, now) } : null;
-    if ((lastYear as { partial?: boolean } | null)?.partial && !missing.includes('lastYear')) missing.push('lastYear');
+    const ly = lastYear as { partial?: boolean; pending?: boolean } | null;
+    if (ly?.partial && !missing.includes('lastYear')) missing.push('lastYear');
+    // 去年数据正在准备（排队等定时任务）：页面只短暂缓存，取到后尽快显示；今天不出题，连续猜对不算断
+    if (ly?.pending) missing.push('lastYearPending');
 
     // 降雨时间轴：只在可能下雨时才请求（需求文档"降雨时间轴"）
     let nowcast: Fetched<NowcastPoint[]> | null = null;
@@ -558,6 +638,17 @@ export class WeatherService {
 }
 
 const SEARCH_TTL = 24 * 3600;
+/** "正在准备"：放进待取队列，等定时任务 */
+const PENDING = 202;
+/** 同一实例里，放进队列后多久才再放一次（防止队列里的任务被放弃后一直不再排队） */
+const REQUEUE_AFTER_MS = 30 * 60_000;
+/** 每次定时任务最多处理多少块、同时几个请求 */
+export const HISTORY_DRAIN = { limit: 60, concurrency: 5 };
+
+/** 去年数据的缓存键（10 天一块） */
+export function historyKey(source: string, cityId: string, start: string): string {
+  return ['v1', source, 'ly', cityId, start].join(':');
+}
 /** 按县、区名字找城市时最多等多久（毫秒），以及行政区中心到 Foreca 城市最远多少公里 */
 const AREA_SEARCH_BUDGET_MS = 2500;
 const AREA_MAX_DISTANCE_KM = 30;

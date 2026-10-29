@@ -273,6 +273,7 @@
   "WeekColdest": "Kallast",
   "DayByDay": "Dag för dag",
   "ClimateUnavailable": "Vi har ännu inte vädret för den här dagen i fjol för den här staden.",
+  "ClimatePreparing": "Vi hämtar förra årets väder för den här staden. Titta in igen om ungefär 10 minuter.",
   "GuessTitle": "Gissa",
   "ClimateForecastHigh": "Väntad högsta",
   "ClimateNormalBand": "Ungefär som i fjol (±2°)",

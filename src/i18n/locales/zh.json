@@ -273,6 +273,7 @@
   "WeekColdest": "最冷",
   "DayByDay": "逐日预报",
   "ClimateUnavailable": "暂时没有这座城市去年同一天的天气数据。",
+  "ClimatePreparing": "正在准备这座城市去年的天气数据，大约 10 分钟后再来看看。",
   "GuessTitle": "猜一猜",
   "ClimateForecastHigh": "预报最高",
   "ClimateNormalBand": "和去年差不多（±2°）",

@@ -273,6 +273,7 @@
   "WeekColdest": "Cea mai rece zi",
   "DayByDay": "Zi cu zi",
   "ClimateUnavailable": "Nu avem încă vremea din această zi de anul trecut pentru acest oraș.",
+  "ClimatePreparing": "Pregătim vremea de anul trecut pentru acest oraș. Revino peste aproximativ 10 minute.",
   "GuessTitle": "Ghicește",
   "ClimateForecastHigh": "Maxima prognozată",
   "ClimateNormalBand": "Cam ca anul trecut (±2°)",

@@ -5,6 +5,7 @@ import { MockProvider } from '../src/weather/mock';
 import { ProviderError } from '../src/weather/provider';
 import { fromCurrentHour, searchLongEnough, shouldFetchNowcast, WeatherService } from '../src/weather/service';
 import { MockHistory, type PastWeatherSource } from '../src/weather/history';
+import { HISTORY_MAX_ATTEMPTS, MemoryHistoryQueue } from '../src/weather/historyQueue';
 import type { CacheStore } from '../src/cache/store';
 
 function setup(startMs = Date.UTC(2026, 9, 22, 3, 0)) {
@@ -427,5 +428,97 @@ describe('last year blocks that fail', () => {
     const bundle = await service.cityBundle('102643743');
     expect(bundle.missing).toContain('lastYear');
     expect(Object.keys(bundle.lastYear!.data).length).toBeGreaterThan(0);
+  });
+});
+
+describe('last year via the prefetch queue (OpenWeather is too slow for pages)', () => {
+  const NOW = Date.UTC(2026, 9, 22, 3);
+  const setup = (fail?: (start: string) => ProviderError | null) => {
+    const calls: string[] = [];
+    const history: PastWeatherSource = {
+      name: 'owm',
+      slow: true,
+      days: async (lat, lon, start) => {
+        calls.push(start);
+        const e = fail?.(start);
+        if (e) throw e;
+        return new MockHistory().days(lat, lon, start);
+      },
+    };
+    const queue = new MemoryHistoryQueue();
+    const store = new MemoryStore(() => NOW);
+    const make = () => new WeatherService(new MockProvider(() => NOW), store, () => NOW, () => undefined, 0, undefined, undefined, history, undefined, queue);
+    return { calls, queue, make };
+  };
+
+  it('pages only read the cache, queue what is missing and say it is being prepared', async () => {
+    const { calls, queue, make } = setup();
+    const svc = make();
+    const bundle = await svc.cityBundle('102643743');
+    expect(calls).toEqual([]);
+    expect(bundle.missing).toContain('lastYearPending');
+    expect(bundle.missing).not.toContain('lastYear');
+    expect(bundle.lastYear?.data).toEqual({});
+    expect(queue.jobs.size).toBeGreaterThanOrEqual(2);
+    const jobs = [...queue.jobs.values()];
+    expect(jobs.every((j) => j.cityId === '102643743' && j.attempts === 0)).toBe(true);
+    // 同一实例再打开不会重复写队列
+    const adds = queue.adds;
+    await svc.cityBundle('102643743');
+    expect(queue.adds).toBe(adds);
+  });
+
+  it('the scheduled job fetches the queued blocks, then pages have the data', async () => {
+    const { calls, queue, make } = setup();
+    await make().cityBundle('102643743');
+    const queued = queue.jobs.size;
+    const r = await make().drainHistoryQueue();
+    expect(r).toEqual({ fetched: queued, dropped: 0, retried: 0, left: 0 });
+    expect(calls.length).toBe(queued);
+    expect(queue.jobs.size).toBe(0);
+    const bundle = await make().cityBundle('102643743');
+    expect(bundle.missing).not.toContain('lastYearPending');
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(15);
+    expect(calls.length).toBe(queued);
+  });
+
+  it('drops blocks the source does not have; pages then show no question instead of waiting', async () => {
+    const { queue, make } = setup(() => new ProviderError('bad request', 404));
+    await make().cityBundle('102643743');
+    const r = await make().drainHistoryQueue();
+    expect(r.dropped).toBeGreaterThanOrEqual(2);
+    expect(queue.jobs.size).toBe(0);
+    const bundle = await make().cityBundle('102643743');
+    expect(bundle.missing).not.toContain('lastYearPending');
+    expect(bundle.missing).not.toContain('lastYear');
+    expect(bundle.lastYear).toBeNull();
+  });
+
+  it('retries temporary failures a few times, then gives up', async () => {
+    const { queue, make } = setup(() => new ProviderError('busy', 503));
+    await make().cityBundle('102643743');
+    const queued = queue.jobs.size;
+    const first = await make().drainHistoryQueue();
+    expect(first.retried).toBe(queued);
+    expect([...queue.jobs.values()].every((j) => j.attempts === 1)).toBe(true);
+    for (let i = 1; i < HISTORY_MAX_ATTEMPTS; i++) await make().drainHistoryQueue();
+    expect(queue.jobs.size).toBe(0);
+  });
+
+  it('stops starting new requests after the deadline', async () => {
+    const { calls, queue, make } = setup();
+    await make().cityBundle('102643743');
+    const r = await make().drainHistoryQueue({ stopAt: Date.now() - 1 });
+    expect(r.left).toBe(queue.jobs.size);
+    expect(calls).toEqual([]);
+  });
+
+  it('without a queue, pages fetch directly as before', async () => {
+    const calls: string[] = [];
+    const history: PastWeatherSource = { name: 'owm', slow: true, days: async (lat, lon, start) => (calls.push(start), new MockHistory().days(lat, lon, start)) };
+    const svc = new WeatherService(new MockProvider(() => NOW), new MemoryStore(() => NOW), () => NOW, () => undefined, 0, undefined, undefined, history);
+    const bundle = await svc.cityBundle('102643743');
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(Object.keys(bundle.lastYear!.data)).toHaveLength(15);
   });
 });

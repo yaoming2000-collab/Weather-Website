@@ -273,6 +273,7 @@
   "WeekColdest": "Lạnh nhất",
   "DayByDay": "Theo từng ngày",
   "ClimateUnavailable": "Chưa có dữ liệu thời tiết ngày này năm ngoái cho thành phố này.",
+  "ClimatePreparing": "Chúng tôi đang chuẩn bị dữ liệu thời tiết năm ngoái cho thành phố này. Hãy quay lại sau khoảng 10 phút.",
   "GuessTitle": "Đoán thử",
   "ClimateForecastHigh": "Dự báo cao nhất",
   "ClimateNormalBand": "Gần như năm ngoái (±2°)",

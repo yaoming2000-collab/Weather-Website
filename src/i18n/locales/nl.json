@@ -273,6 +273,7 @@
   "WeekColdest": "Koudst",
   "DayByDay": "Per dag",
   "ClimateUnavailable": "We hebben nog geen weer van deze dag vorig jaar voor deze stad.",
+  "ClimatePreparing": "We halen het weer van vorig jaar op voor deze stad. Kijk over ongeveer 10 minuten nog eens.",
   "GuessTitle": "Doe een gok",
   "ClimateForecastHigh": "Verwacht maximum",
   "ClimateNormalBand": "Ongeveer als vorig jaar (±2°)",
