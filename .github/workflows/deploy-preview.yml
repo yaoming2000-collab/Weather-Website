@@ -1,4 +1,4 @@
-# 测试环境自动部署：推送到 step-* 分支后，先跑测试，再部署到 Cloudflare（--env preview，模拟数据）。
+# 测试环境自动部署：推送到 step-* 分支后，先跑测试，再部署到 Cloudflare（--env preview）。合到 main 的 PR 只跑测试。
 # 需要在 GitHub 仓库 Settings → Secrets and variables → Actions 里设置两个密钥：
 #   CLOUDFLARE_API_TOKEN   Cloudflare 的 API 令牌（模板 "Edit Cloudflare Workers"）
 #   CLOUDFLARE_ACCOUNT_ID  Cloudflare 账号 ID（控制台 Workers & Pages 页面右侧）
@@ -8,6 +8,9 @@ name: Deploy preview
 on:
   push:
     branches: ['step-*']
+  # 所有合到 main 的 PR 都跑类型检查和测试（Codex 建的分支名不一定是 step-*）
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -29,7 +32,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: Deploy to Cloudflare (preview)
-        if: env.CF_TOKEN != ''
+        # 只在推送 step-* 分支时部署；PR 只跑测试
+        if: github.event_name == 'push' && env.CF_TOKEN != ''
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
