@@ -4,6 +4,7 @@ import { CLIMATE_LEVEL_COLORS } from '../config/features';
 import { HOURS_SHOWN, STALE_AFTER_MIN } from '../config/thresholds';
 import type { CityFeatures } from '../features';
 import type { LifeIndexKey } from '../features/life';
+import { NOWCAST_MESSAGE_KEYS } from '../features/nowcast';
 import { intlLocale, type Lang } from '../i18n/languages';
 import { t } from '../i18n/t';
 import { cityPath } from '../routing/urls';
@@ -23,7 +24,7 @@ import {
   windDirText,
 } from '../weather/derive';
 import { shouldFetchNowcast, type CityBundle } from '../weather/service';
-import type { DailyPoint, HourlyPoint } from '../weather/types';
+import type { DailyPoint, HourlyPoint, NowcastPoint } from '../weather/types';
 import { AdSlot, DASH, Distance, EarlyTime, EarlyUnits, Footer, Icon, Layout, Precip, Sec, Speed, Temp, TopBar } from './components';
 import { raw } from 'hono/html';
 import { G } from './glyphs';
@@ -192,12 +193,25 @@ export function HourlyStrip(props: { hours: HourlyPoint[]; days: DailyPoint[]; l
  * 没请求逐 15 分钟数据（逐小时预报显示未来 3 小时不太可能下雨）时显示"未来 2 小时无雨"；
  * 数据没取到时显示"暂时无法获取"。
  */
-function Nowcast(props: { f: CityFeatures; lang: Lang; fallback: 'dry' | 'unavailable' }) {
+function Nowcast(props: { f: CityFeatures; lang: Lang; fallback: 'dry' | 'unavailable'; points?: NowcastPoint[] | null; radar: boolean }) {
   const n = props.f.nowcast;
   const { lang } = props;
+  // 取到了逐 15 分钟数据：原始数据写进卡片，浏览器每分钟按当前时间重算（client/main.ts updateNowcast），
+  // 免得缓存的页面上"N 分钟后开始下雨"过时（Darren 2026-10-30）
+  const live = props.points?.length
+    ? {
+        'data-nc': JSON.stringify({
+          radar: props.radar,
+          points: props.points.map((p) => [p.time, p.precipRate, p.symbol]),
+          strings: Object.fromEntries(
+            [...NOWCAST_MESSAGE_KEYS, 'NowcastRadarNote', 'NowcastModelNote', 'Unavailable'].map((k) => [k, t(lang, k)]),
+          ),
+        }),
+      }
+    : {};
   if (!n) {
     return (
-      <section class="card" data-nowcast={props.fallback}>
+      <section class="card" data-nowcast={props.fallback} {...live}>
         <Sec icon={G.umbrella()} title={t(lang, 'NowcastTitle')} />
         <div class="nc-msg">{t(lang, props.fallback === 'dry' ? 'Nowcast_dry' : 'Unavailable')}</div>
       </section>
@@ -205,7 +219,7 @@ function Nowcast(props: { f: CityFeatures; lang: Lang; fallback: 'dry' | 'unavai
   }
   if (n.state === 'dry') {
     return (
-      <section class="card" data-nowcast="dry">
+      <section class="card" data-nowcast="dry" {...live}>
         <Sec icon={G.umbrella()} title={t(lang, 'NowcastTitle')} />
         <div class="nc-msg">{t(lang, n.messageKey, n.vars)}</div>
       </section>
@@ -213,7 +227,7 @@ function Nowcast(props: { f: CityFeatures; lang: Lang; fallback: 'dry' | 'unavai
   }
   const max = 3;
   return (
-    <section class="card" data-nowcast={n.state}>
+    <section class="card" data-nowcast={n.state} {...live}>
       <Sec icon={G.umbrella()} title={t(lang, 'NowcastTitle')} />
       <div class="nc-msg">{t(lang, n.messageKey, n.vars)}</div>
       <div class="nc-bars" role="img" aria-label={t(lang, n.messageKey, n.vars)}>
@@ -499,7 +513,7 @@ export function HomePage(p: PageProps) {
       <EarlyUnits />
 
       <div data-live="nowcast" style="display:contents">
-        <Nowcast f={features} lang={lang} fallback={nowcastFallback} />
+        <Nowcast f={features} lang={lang} fallback={nowcastFallback} points={bundle.nowcast?.data} radar={bundle.radar} />
       </div>
 
       <section class="card" data-live="hourly">
