@@ -36,6 +36,14 @@ export interface NowcastSummary {
 
 const SLOT_MS = 15 * 60_000;
 
+/** 降雨时间轴可能出现的全部文案 key（浏览器重算时要用，见 client/lib/nowcast.ts） */
+export const NOWCAST_MESSAGE_KEYS: readonly string[] = [
+  'Nowcast_dry',
+  ...(['rain', 'sleet', 'snow'] as const).flatMap((k) =>
+    ['starting', 'startingFor', 'stopping', 'continuing', 'startingSoon', 'startingLater', 'stoppingSoon', 'stoppingLater'].map((st) => `Nowcast_${st}_${k}`),
+  ),
+];
+
 function intensity(rate: number | null): NowcastBar['intensity'] {
   const r = rate ?? 0;
   if (r < NOWCAST.wetAtLeast) return 0;
