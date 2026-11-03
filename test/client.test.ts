@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { addCity, MAX_CITIES, mergeCities, parseLegacy, parseSaved, readCookie, removeCity } from '../client/lib/saved';
 import { cityToday, minutesAgo, pastHourCount } from '../client/lib/time';
 import { citiesBack, lastCityCookie, parseLastCity } from '../client/lib/lastCity';
+import { fillText, nowcastAt, parseNowcastData, type NowcastData } from '../client/lib/nowcast';
 import { defaultUnits, formatDistance, formatPrecip, formatSpeed, formatTemp, formatTempDelta, fromLegacy, parseUnits } from '../client/lib/units';
 
 describe('units', () => {
@@ -178,5 +179,38 @@ describe('last city (My Cities back link)', () => {
   it('cookie lasts a year and is Secure on https', () => {
     expect(lastCityCookie('101796236', true)).toBe('wcity=101796236; Path=/; Max-Age=31536000; SameSite=Lax; Secure');
     expect(lastCityCookie('101796236', false)).not.toContain('Secure');
+  });
+});
+
+describe('rain timeline recomputed in the browser (cached pages)', () => {
+  const T0 = Date.UTC(2026, 9, 30, 9, 0);
+  const data = (radar: boolean): NowcastData => ({
+    radar,
+    // 09:00 起 8 格，09:30–10:15 下雨
+    points: Array.from({ length: 8 }, (_, i) => [new Date(T0 + i * 900_000).toISOString(), i >= 2 && i <= 5 ? 1.5 : 0, 'd320'] as [string, number, string]),
+    strings: { Nowcast_startingFor_rain: 'Rain starting in {min} min, lasting about {dur} min' },
+  });
+
+  it('counts minutes from the current time, not from when the page was made', () => {
+    expect(nowcastAt(data(true), T0)?.minutes).toBe(30);
+    expect(nowcastAt(data(true), T0 + 12 * 60_000)?.minutes).toBe(20);
+    expect(fillText(data(true).strings.Nowcast_startingFor_rain, nowcastAt(data(true), T0)!.vars)).toBe('Rain starting in 30 min, lasting about 60 min');
+  });
+
+  it('switches to "raining now" once the start has passed, and drops past slots', () => {
+    const n = nowcastAt(data(true), T0 + 40 * 60_000)!;
+    expect(n.state).toBe('stopping');
+    expect(n.bars[0]!.intensity).toBeGreaterThan(0);
+    expect(n.bars.length).toBeLessThanOrEqual(8);
+  });
+
+  it('gives nothing when every slot is in the past (page too old)', () => {
+    expect(nowcastAt(data(true), T0 + 3 * 3600_000)).toBeNull();
+  });
+
+  it('rejects malformed data', () => {
+    expect(parseNowcastData('{')).toBeNull();
+    expect(parseNowcastData(JSON.stringify({ radar: true, points: 'x', strings: {} }))).toBeNull();
+    expect(parseNowcastData(JSON.stringify(data(false)))).not.toBeNull();
   });
 });

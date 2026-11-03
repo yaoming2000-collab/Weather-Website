@@ -21,6 +21,7 @@ import {
 import { entryKey, GUESS_KEY, isChoice, percentRight, readBook, VOTE_KEY, writeBook, type Choice, type Counts } from './lib/interact';
 import { currentStreak, readStreaks, recordResult, recordSkip, STREAK_KEY } from './lib/streak';
 import { citiesBack, LAST_CITY_KEY, lastCityCookie, parseLastCity } from './lib/lastCity';
+import { fillText, nowcastAt, parseNowcastData } from './lib/nowcast';
 import { cityToday, minutesAgo, pastHourCount, REFRESH_AFTER_MS, STALE_AFTER_MIN } from './lib/time';
 import { drawCard, shareOrDownload } from './share';
 import { reportWebVitals } from './vitals';
@@ -249,7 +250,41 @@ function setupCitiesBack() {
 
 // ---------- 3. 现在、今天、更新时间 ----------
 
+/**
+ * 降雨时间轴按当前时间重算（服务器把逐 15 分钟原始数据放在卡片的 data-nc 上，见 src/pages/home.tsx Nowcast）。
+ * 和服务器同样的结构：nc-msg、nc-bars、nc-axis、nc-note；不下雨时只有一行字。
+ */
+function updateNowcast(now = Date.now()) {
+  for (const card of $$('[data-nc]')) {
+    const d = parseNowcastData(card.dataset.nc);
+    if (!d) continue;
+    const n = nowcastAt(d, now);
+    const header = card.querySelector('.sec');
+    const parts: Node[] = header ? [header] : [];
+    if (!n) {
+      // 格子全部过去：页面太旧，等 refreshLive 换新页面
+      parts.push(el('div', { class: 'nc-msg' }, d.strings.Unavailable ?? ''));
+      card.dataset.nowcast = 'unavailable';
+    } else {
+      const text = fillText(d.strings[n.messageKey], n.vars);
+      parts.push(el('div', { class: 'nc-msg' }, text));
+      card.dataset.nowcast = n.state;
+      if (n.state !== 'dry') {
+        const bars = el('div', { class: 'nc-bars', role: 'img', 'aria-label': text });
+        for (const b of n.bars) bars.append(el('span', { 'data-i': String(b.intensity), style: `height:${Math.max(4, (b.intensity / 3) * 100)}%` }));
+        const axis = el('div', { class: 'nc-axis' });
+        n.bars.forEach((b, i) => {
+          if (i % 2 === 0) axis.append(el('bdi', {}, i === 0 ? s('NowLabel') : b.time.slice(11, 16)));
+        });
+        parts.push(bars, axis, el('div', { class: 'nc-note' }, d.strings[n.precise ? 'NowcastRadarNote' : 'NowcastModelNote'] ?? ''));
+      }
+    }
+    card.replaceChildren(...parts);
+  }
+}
+
 function applyTime() {
+  updateNowcast();
   const now = Date.now();
   if (data.tz) {
     const today = cityToday(now, data.tz);

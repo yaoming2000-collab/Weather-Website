@@ -660,3 +660,33 @@ describe('home tag without a question yet', () => {
     expect(html).not.toContain('Today vs. last year –');
   });
 });
+
+describe('rain timeline stays correct on cached pages (Darren 2026-10-30)', () => {
+  it('puts the raw 15-minute data and its texts on the card for the browser to recompute', async () => {
+    const base = new MockProvider(() => NOW);
+    const wet: WeatherProvider = new Proxy(base, {
+      get(target, prop, receiver) {
+        const v = Reflect.get(target, prop, receiver);
+        if (prop === 'hourly') return async (id: string, hours: number) => (await base.hourly(id, hours)).map((h) => ({ ...h, precipProb: 90 }));
+        if (prop === 'nowcast')
+          return async () =>
+            Array.from({ length: 8 }, (_, i) => ({ time: new Date(NOW + i * 900_000).toISOString(), precipRate: i >= 2 ? 1.2 : 0, precipProb: 80, symbol: 'd320' }));
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const home = await (await app(wet).request(req('/wmi/zh/w/102643743'))).text();
+    const m = home.match(/data-nc="([^"]+)"/);
+    expect(m).not.toBeNull();
+    const data = JSON.parse(m![1]!.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'"));
+    expect(data.points).toHaveLength(8);
+    expect(typeof data.radar).toBe('boolean');
+    expect(data.strings.Nowcast_starting_rain).toContain('{min}');
+    expect(data.strings.NowcastRadarNote).toBeTruthy();
+  });
+
+  it('cards without 15-minute data have nothing to recompute', async () => {
+    const home = await (await app(new MockProvider(() => NOW)).request(req('/wmi/en/w/102643743'))).text();
+    const card = home.match(/<section class="card" data-nowcast="dry"[^>]*>/);
+    if (card) expect(card[0]).not.toContain('data-nc');
+  });
+});
