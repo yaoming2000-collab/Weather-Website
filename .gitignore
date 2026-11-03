@@ -5,3 +5,5 @@ dist/
 .DS_Store
 coverage/
 public/static/
+playwright-report/
+test-results/

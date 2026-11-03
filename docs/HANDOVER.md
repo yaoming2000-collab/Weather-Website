@@ -225,5 +225,6 @@ npx wrangler deploy                         # 输出里应是 weather-itsfunmag
 | `README.md` | 设计说明（缓存、往年对比、多语言、缺数据表现、广告位、统计事件、调用统计查询） |
 | `docs/deploy-preview.md` | 测试环境部署步骤（面向开发同事，和第 5 节一致） |
 | `docs/HANDOVER.md` | 本文 |
+| `docs/TESTING.md` | 黑盒功能测试（`npm run test:func`，71 条自动用例）和 25 条人工验收项；迁移后的验收标准 |
 | `scripts/codex-setup.sh` | Codex 云端环境的初始化脚本 |
 | `migrations/` | D1 建表和改表（按编号顺序执行） |

@@ -32,6 +32,7 @@ npm run dev                      # 自动打包浏览器脚本，打开 http://1
 npm test                         # 自动化测试
 npm run typecheck                # 类型检查
 npm run check                    # 类型检查 + 测试（提交前必须通过）
+npm run test:func                # 黑盒功能测试（手机尺寸、模拟数据，约 2 分钟），见 docs/TESTING.md
 ```
 
 用真实数据：在 `.dev.vars` 里设置 `WEATHER_PROVIDER=foreca` 和 `FORECA_TOKEN=你的密钥`。
