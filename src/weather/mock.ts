@@ -111,11 +111,14 @@ export class MockProvider implements WeatherProvider {
     const hour = localParts(now, loc.timezone).hour;
     const symbol = this.symbolFor(loc, localDate(now, loc.timezone), hour);
     const temperature = this.tempAt(loc, now);
-    const precipRate = this.rateFor(symbol, `${id}|now|${hour}`);
+    // 河内固定在下雨（功能测试 e2e/rain.spec.ts 需要一个一定有降雨时间轴的城市）
+    const rainy = id === RAIN_TEST_CITY;
+    const sym = rainy ? 'd320' : symbol;
+    const precipRate = rainy ? 1.2 : this.rateFor(symbol, `${id}|now|${hour}`);
     return {
       time: toLocalIso(now, loc.timezone),
-      symbol,
-      icon: iconFor({ symbol, precipRate, temperature }),
+      symbol: sym,
+      icon: iconFor({ symbol: sym, precipRate, temperature }),
       temperature,
       feelsLike: round1(temperature - 1.5),
       humidity: Math.round(40 + rand(`${id}|hum|${hour}`) * 50),
@@ -125,8 +128,8 @@ export class MockProvider implements WeatherProvider {
       windDir: Math.round(rand(`${id}|dir|${hour}`) * 359),
       precipProb: precipRate > 0 ? 80 : 5,
       precipRate,
-      cloudiness: Number(symbol[1] ?? 0) * 25,
-      thunderProb: symbol[2] === '4' ? 70 : 0,
+      cloudiness: Number(sym[1] ?? 0) * 25,
+      thunderProb: sym[2] === '4' ? 70 : 0,
       uvIndex: hour >= 7 && hour <= 17 ? Math.round(rand(`${id}|uv`) * 8) : 0,
       pressure: Math.round(1000 + rand(`${id}|p`) * 30),
       // 每个城市留一个缺失值，用来检查页面的"—"显示
@@ -242,13 +245,17 @@ export class MockProvider implements WeatherProvider {
     const loc = this.find(id);
     const start = Math.floor(this.now() / 900_000) * 900_000;
     const raining = rand(`${id}|nc|${localDate(start, loc.timezone)}`) > 0.5;
-    return Array.from({ length: 8 }, (_, i) => {
+    return Array.from({ length: 12 }, (_, i) => {
       const t = start + i * 900_000;
-      const rate = raining && i >= 2 && i <= 5 ? round1(0.3 + i * 0.4) : 0;
+      // 河内：正在下，大约 1 小时后停（"N 分钟后雨停"，时间往后走分钟数会减少）
+      const rate = id === RAIN_TEST_CITY ? (i <= 3 ? round1(1.5 - i * 0.2) : 0) : raining && i >= 2 && i <= 5 ? round1(0.3 + i * 0.4) : 0;
       return { time: toLocalIso(t, loc.timezone), precipRate: rate, precipProb: rate > 0 ? 70 : 10, symbol: rate > 0 ? 'd320' : 'd200' };
     });
   }
 }
+
+/** 模拟数据里一直在下雨的城市（河内），给功能测试用 */
+export const RAIN_TEST_CITY = '101581130';
 
 /** 模拟城市当天的月-日，测试用 */
 export function mockMonthDay(nowMs: number, loc: WeatherLocation): string {

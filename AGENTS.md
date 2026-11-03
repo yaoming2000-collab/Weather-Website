@@ -8,10 +8,13 @@
 ```bash
 npm ci                 # 安装依赖
 npm run check          # 类型检查 + 全部测试；提交前必须通过
-npm run typecheck      # 只做类型检查（src、test、client 三套 tsconfig）
+npm run typecheck      # 只做类型检查（src、test、client、e2e 四套 tsconfig）
 npm test               # 只跑测试（Vitest，模拟数据，不需要网络和密钥）
 npm run build:client   # 打包浏览器脚本到 public/static/app.js（dev 和 deploy 会自动执行）
 npm run dev            # 本地运行 http://127.0.0.1:8787/（先 cp .dev.vars.example .dev.vars）
+npm run test:func      # 黑盒功能测试（Playwright，手机尺寸，自动用模拟数据启动本地站点，约 2 分钟）
+npm run test:func -- -g TC-GUESS   # 只跑某个模块（编号见 docs/TESTING.md）
+npm run test:func:report           # 打开上次的测试报告（失败的截图和操作录像）
 ```
 
 - 不要执行会改线上环境的命令：`wrangler deploy`、`npm run deploy`、`wrangler secret …`、`wrangler login`、
@@ -19,6 +22,14 @@ npm run dev            # 本地运行 http://127.0.0.1:8787/（先 cp .dev.vars.
   部署由人来做，命令写进 PR 说明里。
 - 分支名**不要用 `step-` 开头**（例如用 `codex/…`）：推送 `step-*` 分支在配置了 Cloudflare 密钥后会自动部署测试环境。
 - 测试都是离线的。需要真实数据的问题，请在 PR 说明里写明，交给人来验证。
+
+## 功能测试（必须）
+
+- `e2e/` 是黑盒功能测试：只认网址和用户看到的结果，是"功能没被改坏"的验收标准。用例清单和人工验收项在 `docs/TESTING.md`。
+- **改了任何页面、跳转、接口或浏览器脚本，都要跑 `npm run test:func` 并全部通过**；PR 说明里写上结果（通过、跳过的条数）。
+- 不要为了让测试通过而改 `e2e/` 里的预期结果。预期就是产品要求，确实要改的要在 PR 里单独说明理由，等 Darren 确认。
+- 测试依赖少量页面标记（`data-*`，清单见 `docs/TESTING.md`"测试依赖的页面标记"）。改名或删除时要同步改测试。
+- 要保留模拟数据模式（`WEATHER_PROVIDER=mock`，`src/weather/mock.ts`）：部分用例需要固定数据，例如模拟数据里河内一直在下雨。
 
 ## 目录结构
 
@@ -38,7 +49,8 @@ src/i18n/locales/*.json 28 种语言文案（en.json 是基准）
 client/                 浏览器脚本（原生 TS，无框架）；client/lib/ 是可单测的纯函数
 public/                 静态文件（图标、法律页面、sw.js、ads.txt）；public/static/ 是打包产物，不提交
 migrations/             D1 建表和改表，按编号执行，已发布的文件不要改，只新增
-test/                   Vitest 测试
+test/                   Vitest 测试（单元和接口，依赖内部代码）
+e2e/                    Playwright 黑盒功能测试（只依赖网址和页面表现）
 ```
 
 ## 必须遵守的规则
